@@ -18,18 +18,31 @@ cp .env.example .env        # заполнить плейсхолдерами д
 venv/bin/python -m lib.db   # создать/мигрировать БД
 ```
 
-## Деплой (с локальной машины)
+## Первый деплой (свежий VPS) — один раз
+
+`deploy.sh` рассчитан на уже настроенный сервер. На голом VPS сперва провижининг:
 
 ```bash
-./deploy.sh wblutner@PROD_IP
+# 1. Залить код на сервер (от root; /opt/wb-lutner создастся)
+rsync -az --exclude='.env' --exclude='data/' --exclude='logs/' \
+      --exclude='venv/' --exclude='.git/' --exclude='__pycache__/' \
+      ./ root@PROD_IP:/opt/wb-lutner/
+
+# 2. Провижининг: пакеты, пользователь wblutner, venv, зависимости, systemd
+ssh root@PROD_IP 'bash /opt/wb-lutner/bootstrap_server.sh'
+
+# 3. Дальше по подсказкам скрипта: заполнить .env, создать БД, поднять сервис.
+#    Полностью — в SETUP.md (nginx + certbot требуют домен, не голый IP).
 ```
 
-Секреты (`.env`) на прод кладутся **вручную один раз** и не перезаписываются деплоем:
+## Повторный деплой (обновление кода)
 
 ```bash
-scp .env wblutner@PROD_IP:/opt/wb-lutner/.env
-ssh wblutner@PROD_IP 'chmod 600 /opt/wb-lutner/.env'
+chmod +x deploy.sh          # один раз (WSL сбрасывает бит исполняемости)
+./deploy.sh root@PROD_IP    # или wblutner@PROD_IP
 ```
+
+`.env` деплоем не трогается — он живёт только на сервере (chmod 600) и на локальной машине.
 
 ## Диагностика
 
