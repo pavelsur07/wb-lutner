@@ -1,0 +1,14 @@
+[Unit]
+Description=WB-Lutner webhook (gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=wblutner
+WorkingDirectory=/opt/wb-lutner
+ExecStart=/opt/wb-lutner/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 --timeout 60 webhook_server:app
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
