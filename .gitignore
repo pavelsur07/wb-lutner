@@ -9,3 +9,6 @@ __pycache__/
 *.sqlite-shm
 !data/.gitkeep
 !logs/.gitkeep
+.idea/
+*.tar.gz
+fix_sources.sh
