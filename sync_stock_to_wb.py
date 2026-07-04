@@ -6,6 +6,7 @@ Cron: */10 * * * * flock -n /tmp/stock-sync.lock -c 'cd /opt/wb-lutner && venv/b
 """
 from __future__ import annotations
 
+import argparse
 import sys
 
 from lib import config, db, wb_api
@@ -16,7 +17,7 @@ log = get_logger("sync_stock_to_wb")
 BATCH = 1000
 
 
-def run() -> int:
+def run(dry_run: bool = False) -> int:
     config.require("WB_WAREHOUSE_ID")
     conn = db.get_conn()
     rows = conn.execute(
@@ -28,6 +29,11 @@ def run() -> int:
     stocks = [{"sku": r["sku"], "amount": int(r["amount"])} for r in rows]
     if not stocks:
         log.info("mapping пуст — нечего пушить")
+        return 0
+
+    if dry_run:
+        sample = stocks[:10]
+        log.info("[dry-run] отправил бы %s позиций в WB. Первые 10: %s", len(stocks), sample)
         return 0
 
     pushed = 0
@@ -46,4 +52,8 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dry-run", action="store_true",
+                    help="не пушить в WB, только показать что отправил бы")
+    args = ap.parse_args()
+    sys.exit(run(args.dry_run))
