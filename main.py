@@ -107,7 +107,7 @@ def process_order(order: dict, dry_run: bool) -> str:
 
         payload = {
             "profile": int(config.LUTNER_PROFILE_ID) if config.LUTNER_PROFILE_ID else None,
-            "warehouse": "spb",
+            "warehouse": config.LUTNER_WAREHOUSE,
             "dropshipping": True,
             "dropshipping_count": 1,
             "items": {m["article"]: qty},
