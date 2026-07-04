@@ -1,0 +1,6 @@
+d876e22f-7336-11ee-80d7-00155d073801
+
+curl -sS -i -X POST 'https://lutner.ru/local/api/order/' \
+  --header 'Api-token: d876e22f-7336-11ee-80d7-00155d073801' \
+  --header 'Content-Type: application/json' \
+  --data-raw '{"profile":2943,"warehouse":"spb","dropshipping":true,"dropshipping_count":1,"items":{"ZZZ-TEST-NEEXIST-000":1},"comment":"TEST контракт API, не отгружать"}'
