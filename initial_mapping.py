@@ -1,6 +1,10 @@
 """
-initial_mapping.py — Этап 5, одноразово. Тянет карточки WB, матчит по
-баркоду с catalog, наполняет mapping. Отчёт: сматчилось / не найдено.
+initial_mapping.py — наполняет mapping. Ключ связки — АРТИКУЛ:
+берём vendorCode карточки WB (= article Lutner), находим товар в catalog,
+и записываем в mapping баркод карточки WB (sku) + uuid Lutner.
+
+Так остатки уедут в WB по правильному sku (WB понимает только баркод),
+а связь строится по артикулу, как задумано.
 
 Запуск: venv/bin/python initial_mapping.py
 """
@@ -28,42 +32,66 @@ def _iter_cards():
         cursor = {"updatedAt": cur.get("updatedAt"), "nmID": cur.get("nmID")}
 
 
+def _first_barcode(card: dict) -> str | None:
+    """Один товар = один баркод: берём первый sku из первого размера."""
+    for size in card.get("sizes", []):
+        for sku in size.get("skus", []):
+            if sku:
+                return sku
+    return None
+
+
 def run() -> int:
     conn = db.get_conn()
-    matched = unmatched = 0
-    unmatched_barcodes = []
+    matched = 0
+    no_article = []   # карточки WB без пары в каталоге Lutner
+    no_barcode = []   # карточки WB без баркода (нечего слать в WB)
     try:
         for card in _iter_cards():
+            vendor_code = (card.get("vendorCode") or "").strip()
             nm_id = card.get("nmID")
-            for size in card.get("sizes", []):
-                for barcode in size.get("skus", []):
-                    row = conn.execute(
-                        "SELECT uuid, article FROM catalog WHERE barcode=? LIMIT 1",
-                        (barcode,),
-                    ).fetchone()
-                    if not row:
-                        unmatched += 1
-                        unmatched_barcodes.append(barcode)
-                        continue
-                    conn.execute(
-                        """INSERT INTO mapping (wb_barcode, wb_nmid, lutner_uuid, lutner_article)
-                           VALUES (?,?,?,?)
-                           ON CONFLICT(wb_barcode) DO UPDATE SET
-                             wb_nmid=excluded.wb_nmid,
-                             lutner_uuid=excluded.lutner_uuid,
-                             lutner_article=excluded.lutner_article""",
-                        (barcode, nm_id, row["uuid"], row["article"]),
-                    )
-                    matched += 1
+            if not vendor_code:
+                continue
+
+            row = conn.execute(
+                "SELECT uuid, article FROM catalog WHERE article=? LIMIT 1",
+                (vendor_code,),
+            ).fetchone()
+            if not row:
+                no_article.append(vendor_code)
+                continue
+
+            wb_barcode = _first_barcode(card)
+            if not wb_barcode:
+                no_barcode.append(vendor_code)
+                continue
+
+            conn.execute(
+                """INSERT INTO mapping (wb_barcode, wb_nmid, lutner_uuid, lutner_article)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(wb_barcode) DO UPDATE SET
+                     wb_nmid=excluded.wb_nmid,
+                     lutner_uuid=excluded.lutner_uuid,
+                     lutner_article=excluded.lutner_article""",
+                (wb_barcode, nm_id, row["uuid"], row["article"]),
+            )
+            matched += 1
         conn.commit()
     finally:
         conn.close()
 
-    log.info("mapping: matched=%s unmatched=%s", matched, unmatched)
-    if unmatched_barcodes:
-        log.warning("не найдено в catalog (%s): %s",
-                    unmatched, ", ".join(unmatched_barcodes[:50]))
-    print(f"Сматчилось: {matched}\nНе найдено: {unmatched}")
+    log.info("mapping: matched=%s no_article=%s no_barcode=%s",
+             matched, len(no_article), len(no_barcode))
+    if no_article:
+        log.warning("артикул WB не найден в каталоге Lutner (%s): %s",
+                    len(no_article), ", ".join(no_article[:50]))
+    if no_barcode:
+        log.warning("у карточки WB нет баркода (%s): %s",
+                    len(no_barcode), ", ".join(no_barcode[:50]))
+
+    print(f"Связано по артикулу: {matched}")
+    print(f"Артикул не найден в Lutner: {len(no_article)}")
+    print(f"Карточка WB без баркода: {len(no_barcode)}")
     return 0
 
 
