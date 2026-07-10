@@ -1,6 +1,11 @@
 """
 sync_stock_to_wb.py — Этап 5. Каждые 10 мин пушит store_spb в остатки WB.
-Нет записи в stock -> 0. Батчами по 1000.
+
+Перед отправкой спрашивает WB, какие sku склад реально знает, и шлёт остатки
+ТОЛЬКО по ним. Товары без привязки к складу тихо пропускаются — ручная
+чистка mapping не нужна, одна непривязанная позиция не ломает весь push.
+
+Нет записи в stock -> amount 0. Батчами по 1000.
 
 Cron: */10 * * * * flock -n /tmp/stock-sync.lock -c 'cd /opt/wb-lutner && venv/bin/python sync_stock_to_wb.py'
 """
@@ -17,6 +22,22 @@ log = get_logger("sync_stock_to_wb")
 BATCH = 1000
 
 
+def _known_skus(all_skus: list[str]) -> set[str]:
+    """Спрашивает WB, какие из sku заведены на складе. Возвращает множество известных."""
+    known: set[str] = set()
+    for i in range(0, len(all_skus), BATCH):
+        chunk = all_skus[i:i + BATCH]
+        resp = wb_api._request(
+            "POST", config.WB_API_BASE,
+            f"/api/v3/stocks/{config.WB_WAREHOUSE_ID}",
+            json_body={"skus": chunk},
+        )
+        for s in (resp.get("stocks") or []):
+            if s.get("sku"):
+                known.add(s["sku"])
+    return known
+
+
 def run(dry_run: bool = False) -> int:
     config.require("WB_WAREHOUSE_ID")
     conn = db.get_conn()
@@ -26,14 +47,31 @@ def run(dry_run: bool = False) -> int:
     ).fetchall()
     conn.close()
 
-    stocks = [{"sku": r["sku"], "amount": int(r["amount"])} for r in rows]
+    stocks = [{"sku": r["sku"], "amount": int(r["amount"])} for r in rows if r["sku"]]
     if not stocks:
         log.info("mapping пуст — нечего пушить")
         return 0
 
+    # Фильтр: оставляем только те sku, что склад WB реально знает.
+    try:
+        known = _known_skus([s["sku"] for s in stocks])
+    except Exception as e:  # noqa: BLE001
+        log.exception("не удалось проверить привязку sku к складу")
+        alert("sync_stock_to_wb FAILED (проверка складов)", str(e))
+        return 1
+
+    skipped = [s["sku"] for s in stocks if s["sku"] not in known]
+    stocks = [s for s in stocks if s["sku"] in known]
+    if skipped:
+        log.info("пропущено (не привязаны к складу %s): %s шт %s",
+                 config.WB_WAREHOUSE_ID, len(skipped), skipped[:20])
+    if not stocks:
+        log.info("после фильтра нечего пушить (нет привязанных sku)")
+        return 0
+
     if dry_run:
-        sample = stocks[:10]
-        log.info("[dry-run] отправил бы %s позиций в WB. Первые 10: %s", len(stocks), sample)
+        log.info("[dry-run] отправил бы %s позиций в WB. Первые 10: %s",
+                 len(stocks), stocks[:10])
         return 0
 
     pushed = 0
@@ -46,7 +84,8 @@ def run(dry_run: bool = False) -> int:
         alert("sync_stock_to_wb FAILED", f"Пуш остатков в WB упал:\n{e}")
         return 1
 
-    log.info("pushed %s stocks to WB warehouse %s", pushed, config.WB_WAREHOUSE_ID)
+    log.info("pushed %s stocks to WB warehouse %s (пропущено %s)",
+             pushed, config.WB_WAREHOUSE_ID, len(skipped))
     db.set_state("last_stock_to_wb", "ok")
     return 0
 

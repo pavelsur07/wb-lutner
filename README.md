@@ -34,6 +34,10 @@ ssh root@PROD_IP 'bash /opt/wb-lutner/bootstrap_server.sh'
 # 3. Дальше по подсказкам скрипта: заполнить .env, создать БД, поднять сервис.
 #    Полностью — в SETUP.md (nginx + certbot требуют домен, не голый IP).
 ```
+# 4. Обновить .env на ROD
+cd ~/projects/wb-lutner
+scp .env root@201.51.31.211:/opt/wb-lutner/.env
+ssh root@201.51.31.211 'chown wblutner:wblutner /opt/wb-lutner/.env && chmod 600 /opt/wb-lutner/.env && systemctl restart wb-lutner-webhook'
 
 ## Повторный деплой (обновление кода)
 
