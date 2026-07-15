@@ -76,11 +76,13 @@ def orders_status(order_ids: list[int]) -> dict:
 
 
 def confirm_order(order_id: int) -> dict:
-    return _request("PATCH", config.WB_API_BASE, f"/api/v3/orders/{order_id}/confirm")
+    # Модель DBW (Delivery by Wildberries) — с 2025-11 вынесена в отдельный путь.
+    # Старый /api/v3/orders/{id}/confirm отключён (404 PLUG-404-20251118).
+    return _request("PATCH", config.WB_API_BASE, f"/api/v3/dbw/orders/{order_id}/confirm")
 
 
 def cancel_order(order_id: int) -> dict:
-    return _request("PATCH", config.WB_API_BASE, f"/api/v3/orders/{order_id}/cancel")
+    return _request("PATCH", config.WB_API_BASE, f"/api/v3/dbw/orders/{order_id}/cancel")
 
 
 def stickers(order_ids: list[int], sticker_type="png", width=58, height=40):
