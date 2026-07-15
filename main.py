@@ -145,7 +145,16 @@ def run(dry_run: bool) -> int:
         alert("main.py: WB orders_new упал", str(e))
         return 1
 
-    orders = data.get("orders") or []
+    all_orders = data.get("orders") or []
+
+    # Берём только заказы НАШЕГО склада (склад Lutner). Заказы других складов
+    # продавца нас не касаются — их собирают иначе.
+    wh = str(config.WB_WAREHOUSE_ID)
+    orders = [o for o in all_orders if str(o.get("warehouseId")) == wh]
+    skipped = len(all_orders) - len(orders)
+    if skipped:
+        log.info("пропущено %s заказов с других складов (наш склад: %s)", skipped, wh)
+
     stats: dict[str, int] = {}
     for o in orders:
         r = process_order(o, dry_run)
