@@ -123,7 +123,24 @@ def process_order(order: dict, dry_run: bool) -> str:
         lutner_id = str(resp.get("order_id") or resp.get("id") or "")
         _save(conn, wb_id, "created", lutner_id=lutner_id, comment=comment, items=items)
         log.info("created Lutner order %s for WB %s", lutner_id, wb_id)
-        return "created"
+
+        # Заказ в Lutner уже создан — откатить его нельзя. Подтверждаем задание
+        # в WB (перевод в сборку). Если confirm упадёт, НЕ теряем lutner_order_id:
+        # помечаем отдельным статусом и алертим — подтвердить вручную.
+        try:
+            wb_api.confirm_order(wb_id)
+            _save(conn, wb_id, "confirmed", lutner_id=lutner_id,
+                  comment=comment, items=items)
+            log.info("confirmed WB order %s", wb_id)
+            return "confirmed"
+        except Exception as ce:  # noqa: BLE001
+            _save(conn, wb_id, "created_not_confirmed", lutner_id=lutner_id,
+                  comment=comment, items=items, error={"confirm": str(ce)})
+            log.exception("confirm WB %s failed (заказ Lutner %s СОЗДАН)", wb_id, lutner_id)
+            alert("WB confirm НЕ прошёл",
+                  f"Заказ Lutner {lutner_id} создан, но WB {wb_id} не подтверждён.\n"
+                  f"Подтвердите вручную в кабинете WB.\nОшибка: {ce}")
+            return "created_not_confirmed"
 
     except Exception as e:  # noqa: BLE001
         try:
