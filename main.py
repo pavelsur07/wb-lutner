@@ -21,8 +21,28 @@ log = get_logger("main")
 MSK = timezone(timedelta(hours=3))
 
 
-def _shipment_date() -> str:
-    return datetime.now(MSK).strftime("%Y-%m-%d")
+def _shipment_date(order: dict) -> str:
+    """
+    Дата отгрузки по времени заказа в WB (createdAt, приходит в UTC), в МСК.
+
+    Дедлайн приёма «день в день» у Lutner — 8:00 МСК:
+      заказ 00:00–07:00 МСК -> успеваем сегодня
+      заказ 07:01–23:59 МСК -> отгрузка следующего дня
+    """
+    created = order.get("createdAt")
+    dt = None
+    if created:
+        try:
+            dt = datetime.fromisoformat(str(created).replace("Z", "+00:00")).astimezone(MSK)
+        except ValueError:
+            log.warning("не разобрал createdAt=%r, беру текущее время", created)
+    if dt is None:
+        dt = datetime.now(MSK)
+
+    ship = dt.date()
+    if (dt.hour, dt.minute) > (7, 0):
+        ship += timedelta(days=1)
+    return ship.strftime("%d.%m.%Y")
 
 
 def _lookup(conn, barcode: str):
@@ -83,10 +103,7 @@ def process_order(order: dict, dry_run: bool) -> str:
             alert("Неизвестный баркод", f"order {wb_id}, barcode {barcode} нет в mapping")
             return "no_mapping"
 
-        comment = (
-            f"{config.MARKETPLACE_NAME}, отгрузка {_shipment_date()}, "
-            f"WB order {wb_id}"
-        )
+        comment = f"ВБ {_shipment_date(order)}"
         items = {"article": m["article"], "qty": qty, "barcode": barcode}
 
         if m["spb"] < qty:
