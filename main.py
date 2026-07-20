@@ -103,7 +103,7 @@ def process_order(order: dict, dry_run: bool) -> str:
             alert("Неизвестный баркод", f"order {wb_id}, barcode {barcode} нет в mapping")
             return "no_mapping"
 
-        comment = f"ВБ {_shipment_date(order)}"
+        comment = f"Wildberries, отгрузка {_shipment_date(order)}"
         items = {"article": m["article"], "qty": qty, "barcode": barcode}
 
         if m["spb"] < qty:
