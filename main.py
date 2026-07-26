@@ -42,6 +42,11 @@ def _shipment_date(order: dict) -> str:
     ship = dt.date()
     if (dt.hour, dt.minute) > (7, 0):
         ship += timedelta(days=1)
+
+    # Lutner не отгружает в выходные: если дата отгрузки попала на
+    # субботу(5) или воскресенье(6) — переносим на понедельник.
+    while ship.weekday() >= 5:
+        ship += timedelta(days=1)
     return ship.strftime("%d.%m.%Y")
 
 
