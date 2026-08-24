@@ -102,10 +102,16 @@ def update_stocks(stocks: list[dict]) -> dict:
     return _request("/v2/products/stocks", {"stocks": stocks})
 
 
-def stocks_by_warehouse(offer_ids: list[str]) -> dict:
-    """Текущие остатки FBS по складам для указанных offer_id."""
-    return _request("/v2/product/info/stocks-by-warehouse/fbs",
-                    {"offer_id": offer_ids})
+def stocks_by_warehouse(offer_ids: list[str], limit: int = 1000,
+                        cursor: str = "") -> dict:
+    """
+    Текущие остатки FBS по складам для указанных offer_id.
+    limit обязателен, допустимый диапазон (0, 1000].
+    """
+    body = {"offer_id": offer_ids, "limit": limit}
+    if cursor:
+        body["cursor"] = cursor
+    return _request("/v2/product/info/stocks-by-warehouse/fbs", body)
 
 
 # --- Заказы (отправления FBS) ---
