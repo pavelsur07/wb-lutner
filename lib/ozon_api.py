@@ -115,11 +115,22 @@ def stocks_by_warehouse(offer_ids: list[str], limit: int = 1000,
 
 
 # --- Заказы (отправления FBS) ---
-def postings_unfulfilled(limit: int = 100, offset: int = 0) -> dict:
-    """Необработанные отправления FBS."""
+def postings_unfulfilled(limit: int = 100, offset: int = 0,
+                         days_back: int = 3, days_forward: int = 30) -> dict:
+    """
+    Необработанные отправления FBS.
+    Ozon требует в фильтре период cutoff_from/cutoff_to (дата сборки),
+    иначе отвечает 400 "mismatch between cutoff & delivery date".
+    """
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
     body = {
         "dir": "ASC",
-        "filter": {},
+        "filter": {
+            "cutoff_from": (now - timedelta(days=days_back)).strftime(fmt),
+            "cutoff_to": (now + timedelta(days=days_forward)).strftime(fmt),
+        },
         "limit": limit,
         "offset": offset,
         "with": {"analytics_data": False, "financial_data": False},
