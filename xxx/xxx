@@ -1,6 +1,22 @@
 d876e22f-7336-11ee-80d7-00155d073801
 
-curl -sS -i -X POST 'https://lutner.ru/local/api/order/' \
-  --header 'Api-token: d876e22f-7336-11ee-80d7-00155d073801' \
-  --header 'Content-Type: application/json' \
-  --data-raw '{"profile":2943,"warehouse":"spb","dropshipping":true,"dropshipping_count":1,"items":{"ZZZ-TEST-NEEXIST-000":1},"comment":"TEST контракт API, не отгружать"}'
+--- Ozon ---
+
+  curl -sS -X POST 'https://api-seller.ozon.ru/v3/product/list' \
+    -H 'Client-Id: 4568454' \
+    -H 'Api-Key: f3a4a959-15ed-46a5-946a-3f98d9159636' \
+    -H 'Content-Type: application/json' \
+    -d '{"filter":{"visibility":"ALL"},"limit":3}'
+
+  curl -sS -X POST 'https://api-seller.ozon.ru/v2/warehouse/list' \
+      -H 'Client-Id: 4568454' \
+      -H 'Api-Key: f3a4a959-15ed-46a5-946a-3f98d9159636' \
+      -H 'Content-Type: application/json' \
+      -d '{"limit":100,"cursor":""}'
+
+ curl -sS -X POST 'https://api-seller.ozon.ru/v2/warehouse/list' \
+   -H 'Client-Id: 4568454' \
+   -H 'Api-Key: f3a4a959-15ed-46a5-946a-3f98d9159636' \
+   -H 'Content-Type: application/json' \
+   -d '{"limit":100,"cursor":""}' \
+ | python3 -c "import sys,json; [print(w['warehouse_id'], w['name']) for w in json.load(sys.stdin)['warehouses']]"

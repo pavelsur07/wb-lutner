@@ -78,3 +78,8 @@ def require(*names: str) -> None:
 
 # Валидируем ядро сразу при импорте — упасть при старте, а не ночью.
 require(*_CORE_REQUIRED)
+
+# --- Ozon ---
+OZON_CLIENT_ID = _get("OZON_CLIENT_ID")
+OZON_API_KEY = _get("OZON_API_KEY")
+OZON_WAREHOUSE_ID = _get("OZON_WAREHOUSE_ID")
