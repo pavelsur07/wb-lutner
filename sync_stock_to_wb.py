@@ -88,14 +88,32 @@ def run(dry_run: bool = False, only: str | None = None,
         return 0
 
     pushed = 0
+    rejected: list[str] = []
     try:
         for i in range(0, len(stocks), BATCH):
-            wb_api.update_stocks(config.WB_WAREHOUSE_ID, stocks[i:i + BATCH])
-            pushed += len(stocks[i:i + BATCH])
+            chunk = stocks[i:i + BATCH]
+            try:
+                wb_api.update_stocks(config.WB_WAREHOUSE_ID, chunk)
+                pushed += len(chunk)
+            except Exception as batch_err:  # noqa: BLE001
+                # WB отвечает 409, если в батче есть sku, которых нет на складе.
+                # Падает ВЕСЬ батч, поэтому пробуем по одному: известные пройдут,
+                # новые заодно привяжутся к складу.
+                log.warning("батч отклонён (%s), пробую по одному: %s позиций",
+                            batch_err, len(chunk))
+                for item in chunk:
+                    try:
+                        wb_api.update_stocks(config.WB_WAREHOUSE_ID, [item])
+                        pushed += 1
+                    except Exception:  # noqa: BLE001
+                        rejected.append(item["sku"])
     except Exception as e:  # noqa: BLE001
         log.exception("stock push failed")
         alert("sync_stock_to_wb FAILED", f"Пуш остатков в WB упал:\n{e}")
         return 1
+
+    if rejected:
+        log.warning("WB отклонил %s sku: %s", len(rejected), rejected[:20])
 
     log.info("pushed %s stocks to WB warehouse %s (пропущено %s)",
              pushed, config.WB_WAREHOUSE_ID, len(skipped))
