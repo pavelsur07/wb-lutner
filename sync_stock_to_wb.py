@@ -47,7 +47,11 @@ def run(dry_run: bool = False) -> int:
     ).fetchall()
     conn.close()
 
-    stocks = [{"sku": r["sku"], "amount": int(r["amount"])} for r in rows if r["sku"]]
+    # Lutner иногда присылает отрицательный остаток (напр. -1). WB такое
+    # не принимает и отклоняет ВЕСЬ батч (IncorrectRequestBody), поэтому
+    # обрезаем снизу нулём.
+    stocks = [{"sku": r["sku"], "amount": max(0, int(r["amount"]))}
+              for r in rows if r["sku"]]
     if not stocks:
         log.info("mapping пуст — нечего пушить")
         return 0

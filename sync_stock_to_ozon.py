@@ -40,7 +40,8 @@ def run(dry_run: bool = False, only: str | None = None) -> int:
     conn.close()
 
     stocks = [
-        {"offer_id": r["offer_id"], "stock": int(r["amount"]),
+        # отрицательные остатки Lutner обрезаем нулём (см. sync_stock_to_wb)
+        {"offer_id": r["offer_id"], "stock": max(0, int(r["amount"])),
          "warehouse_id": warehouse_id}
         for r in rows if r["offer_id"]
     ]
