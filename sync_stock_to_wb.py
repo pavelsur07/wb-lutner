@@ -38,13 +38,17 @@ def _known_skus(all_skus: list[str]) -> set[str]:
     return known
 
 
-def run(dry_run: bool = False) -> int:
+def run(dry_run: bool = False, only: str | None = None,
+        no_filter: bool = False) -> int:
     config.require("WB_WAREHOUSE_ID")
     conn = db.get_conn()
-    rows = conn.execute(
-        """SELECT m.wb_barcode AS sku, COALESCE(s.store_spb,0) AS amount
-           FROM mapping m LEFT JOIN stock s ON s.uuid = m.lutner_uuid"""
-    ).fetchall()
+    sql = """SELECT m.wb_barcode AS sku, COALESCE(s.store_spb,0) AS amount
+             FROM mapping m LEFT JOIN stock s ON s.uuid = m.lutner_uuid"""
+    params: tuple = ()
+    if only:
+        sql += " WHERE m.lutner_article = ? OR m.wb_barcode = ?"
+        params = (only, only)
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
 
     # Lutner иногда присылает отрицательный остаток (напр. -1). WB такое
@@ -56,16 +60,21 @@ def run(dry_run: bool = False) -> int:
         log.info("mapping пуст — нечего пушить")
         return 0
 
-    # Фильтр: оставляем только те sku, что склад WB реально знает.
-    try:
-        known = _known_skus([s["sku"] for s in stocks])
-    except Exception as e:  # noqa: BLE001
-        log.exception("не удалось проверить привязку sku к складу")
-        alert("sync_stock_to_wb FAILED (проверка складов)", str(e))
-        return 1
+    # Фильтр привязки к складу. WB заводит товар на склад при первой удачной
+    # отправке остатка, поэтому с --no-filter можно "прогреть" новые товары.
+    skipped: list[str] = []
+    if not no_filter:
+        try:
+            known = _known_skus([s["sku"] for s in stocks])
+        except Exception as e:  # noqa: BLE001
+            log.exception("не удалось проверить привязку sku к складу")
+            alert("sync_stock_to_wb FAILED (проверка складов)", str(e))
+            return 1
 
-    skipped = [s["sku"] for s in stocks if s["sku"] not in known]
-    stocks = [s for s in stocks if s["sku"] in known]
+        skipped = [s["sku"] for s in stocks if s["sku"] not in known]
+        stocks = [s for s in stocks if s["sku"] in known]
+    else:
+        log.info("--no-filter: шлём все %s позиций без проверки привязки", len(stocks))
     if skipped:
         log.info("пропущено (не привязаны к складу %s): %s шт %s",
                  config.WB_WAREHOUSE_ID, len(skipped), skipped[:20])
@@ -98,5 +107,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true",
                     help="не пушить в WB, только показать что отправил бы")
+    ap.add_argument("--only", metavar="ARTICLE",
+                    help="только один товар (артикул Lutner или баркод WB)")
+    ap.add_argument("--no-filter", action="store_true",
+                    help="не проверять привязку к складу (для новых товаров)")
     args = ap.parse_args()
-    sys.exit(run(args.dry_run))
+    sys.exit(run(args.dry_run, args.only, args.no_filter))
