@@ -23,6 +23,20 @@ from lib.mailer import alert
 
 log = get_logger("sync_stock_to_ozon")
 BATCH = 100  # лимит Ozon: 100 пар «товар-склад» за запрос
+MIN_STOCK = int(config._get("MIN_STOCK_THRESHOLD", "3") or 3)
+
+def _sellable(raw) -> int:
+    """
+    Остаток, который отдаём маркетплейсу.
+
+    - отрицательные значения Lutner обрезаем нулём (WB отклоняет батч);
+    - если на складе Lutner меньше MIN_STOCK_THRESHOLD (по умолчанию 3),
+      отдаём 0 — страховка от оверселла: 1-2 шт могут уйти в другом канале
+      раньше, чем мы успеем оформить отгрузку.
+    """
+    amount = max(0, int(raw))
+    return 0 if amount < MIN_STOCK else amount
+
 
 
 def run(dry_run: bool = False, only: str | None = None) -> int:
@@ -40,8 +54,7 @@ def run(dry_run: bool = False, only: str | None = None) -> int:
     conn.close()
 
     stocks = [
-        # отрицательные остатки Lutner обрезаем нулём (см. sync_stock_to_wb)
-        {"offer_id": r["offer_id"], "stock": max(0, int(r["amount"])),
+        {"offer_id": r["offer_id"], "stock": _sellable(r["amount"]),
          "warehouse_id": warehouse_id}
         for r in rows if r["offer_id"]
     ]
