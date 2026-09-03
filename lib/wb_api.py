@@ -108,3 +108,39 @@ def cards_list(cursor=None, limit=100) -> dict:
         body["settings"]["cursor"].update(cursor)
     return _request("POST", config.WB_CONTENT_API_BASE,
                     "/content/v2/get/cards/list", json_body=body)
+
+# --- Поставки (FBS) ---
+def supplies_list(limit: int = 1000, next_: int = 0) -> dict:
+    """Список поставок. done=false — активные («На сборке»)."""
+    return _request("GET", config.WB_API_BASE, "/api/v3/supplies",
+                    params={"limit": limit, "next": next_})
+
+
+def supply_create(name: str) -> dict:
+    """Создать поставку. Возвращает {'id': 'WB-GI-...'}."""
+    return _request("POST", config.WB_API_BASE, "/api/v3/supplies",
+                    json_body={"name": name})
+
+
+def supply_add_order(supply_id: str, order_id: int) -> dict:
+    """
+    Добавить сборочное задание к поставке.
+    Переводит заказ в статус confirm («На сборке») — после этого
+    у заказа появляется стикер.
+    """
+    return _request("PATCH", config.WB_API_BASE,
+                    f"/api/v3/supplies/{supply_id}/orders/{order_id}")
+
+
+def find_active_supply(name: str) -> str | None:
+    """Ищет активную (не закрытую) поставку с указанным именем."""
+    next_ = 0
+    while True:
+        data = supplies_list(next_=next_)
+        supplies = data.get("supplies") or []
+        for s in supplies:
+            if s.get("name") == name and not s.get("done"):
+                return s.get("id")
+        next_ = data.get("next") or 0
+        if not supplies or not next_:
+            return None

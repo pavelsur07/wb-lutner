@@ -125,7 +125,7 @@ def process_posting(posting: dict, dry_run: bool) -> str:
                   f"posting {pn}: проблемные позиции:\n{problems}")
             return "failed"
 
-        comment = f"Ozon, отгрузка {_shipment_date(posting)}"
+        comment = f"Ozon, отгрузка {_shipment_date(posting)}, Отправление {pn}"
 
         if dry_run:
             _save(conn, pn, "dry_run", comment=comment, items=items_info)
