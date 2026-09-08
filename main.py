@@ -130,7 +130,8 @@ def process_order(order: dict, dry_run: bool) -> str:
                            (wb_id,)).fetchone()
         # Пропускаем только то, что доведено до конца. Промежуточные состояния
         # (напр. не получили стикер) повторяем на следующем запуске.
-        if row and row["status"] in ("created", "no_mapping", "dry_run"):
+        # manual — обработан вручную вне системы, автоматика не трогает.
+        if row and row["status"] in ("created", "no_mapping", "dry_run", "manual"):
             return "skip"
 
         if not barcode:
@@ -172,7 +173,10 @@ def process_order(order: dict, dry_run: bool) -> str:
         # При сбое на любом шаге заказ в Lutner НЕ создаём: повторим в след. цикл.
         try:
             supply_id = _ensure_supply(order)
-            wb_api.supply_add_order(supply_id, wb_id)
+            # Идемпотентность: если после частичного сбоя заказ уже в поставке,
+            # повторный PATCH вернёт 409 (а WB считает его как 10 запросов).
+            if wb_id not in wb_api.supply_order_ids(supply_id):
+                wb_api.supply_add_orders(supply_id, [wb_id])
             sticker = _sticker_for(wb_id)
         except Exception as se:  # noqa: BLE001
             _save(conn, wb_id, "pending_supply", items=items,
@@ -220,6 +224,38 @@ def process_order(order: dict, dry_run: bool) -> str:
         conn.close()
 
 
+def _alert_stuck_pending_supply() -> None:
+    """
+    Алерт, если заказы зависли в pending_supply дольше 2 часов.
+    Повторное письмо — не чаще раза в 6 часов (дедупликация через system_state).
+    """
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT wb_order_id, error_json, created_at FROM orders "
+            "WHERE status='pending_supply' "
+            "AND created_at < datetime('now', '-2 hours')"
+        ).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return
+    last = db.get_state("pending_supply_alert_at")
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last)
+            if datetime.now(timezone.utc) - last_dt < timedelta(hours=6):
+                return
+        except ValueError:
+            pass
+    lines = [f"{r['wb_order_id']} (с {r['created_at']} UTC): {r['error_json']}"
+             for r in rows]
+    alert("WB: заказы застряли в pending_supply",
+          f"{len(rows)} заказ(ов) ждут поставку/стикер дольше 2 часов:\n"
+          + "\n".join(lines))
+    db.set_state("pending_supply_alert_at", datetime.now(timezone.utc).isoformat())
+
+
 def run(dry_run: bool) -> int:
     try:
         data = wb_api.orders_new()
@@ -243,6 +279,8 @@ def run(dry_run: bool) -> int:
         r = process_order(o, dry_run)
         stats[r] = stats.get(r, 0) + 1
     log.info("cycle done: fetched=%s %s", len(orders), stats)
+    if not dry_run:
+        _alert_stuck_pending_supply()
     return 0
 
 
