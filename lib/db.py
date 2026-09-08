@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS orders (
     items_json         TEXT,
     error_json         TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    status_at          TEXT,
     sent_to_manager_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status);
@@ -95,6 +96,9 @@ def init_db() -> None:
     conn = get_conn()
     try:
         conn.executescript(SCHEMA)
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(orders)")]
+        if "status_at" not in cols:
+            conn.execute("ALTER TABLE orders ADD COLUMN status_at TEXT")
         conn.commit()
     finally:
         conn.close()

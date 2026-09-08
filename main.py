@@ -69,12 +69,12 @@ def _save(conn, wb_id, status, *, lutner_id=None, comment=None, items=None, erro
     conn.execute(
         """
         INSERT INTO orders
-            (wb_order_id, lutner_order_id, status, comment, items_json, error_json, created_at)
-        VALUES (?,?,?,?,?,?, datetime('now'))
+            (wb_order_id, lutner_order_id, status, comment, items_json, error_json, created_at, status_at)
+        VALUES (?,?,?,?,?,?, datetime('now'), datetime('now'))
         ON CONFLICT(wb_order_id) DO UPDATE SET
             lutner_order_id=excluded.lutner_order_id, status=excluded.status,
             comment=excluded.comment, items_json=excluded.items_json,
-            error_json=excluded.error_json
+            error_json=excluded.error_json, status_at=excluded.status_at
         """,
         (
             wb_id, lutner_id, status, comment,
@@ -234,7 +234,7 @@ def _alert_stuck_pending_supply() -> None:
         rows = conn.execute(
             "SELECT wb_order_id, error_json, created_at FROM orders "
             "WHERE status='pending_supply' "
-            "AND created_at < datetime('now', '-2 hours')"
+            "AND COALESCE(status_at, created_at) < datetime('now', '-2 hours')"
         ).fetchall()
     finally:
         conn.close()
@@ -250,10 +250,13 @@ def _alert_stuck_pending_supply() -> None:
             pass
     lines = [f"{r['wb_order_id']} (с {r['created_at']} UTC): {r['error_json']}"
              for r in rows]
-    alert("WB: заказы застряли в pending_supply",
-          f"{len(rows)} заказ(ов) ждут поставку/стикер дольше 2 часов:\n"
-          + "\n".join(lines))
-    db.set_state("pending_supply_alert_at", datetime.now(timezone.utc).isoformat())
+    # Троттлинг включаем только после успешной отправки — иначе при сбое
+    # SMTP следующие 6 часов алерты будут молча подавлены.
+    if alert("WB: заказы застряли в pending_supply",
+             f"{len(rows)} заказ(ов) ждут поставку/стикер дольше 2 часов:\n"
+             + "\n".join(lines)):
+        db.set_state("pending_supply_alert_at",
+                     datetime.now(timezone.utc).isoformat())
 
 
 def run(dry_run: bool) -> int:
