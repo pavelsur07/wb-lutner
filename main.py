@@ -85,6 +85,39 @@ def _save(conn, wb_id, status, *, lutner_id=None, comment=None, items=None, erro
     conn.commit()
 
 
+
+def _supply_name(order: dict) -> str:
+    return f"Лютнер {_shipment_date(order)}"
+
+
+def _ensure_supply(order: dict) -> str:
+    """
+    Находит активную поставку «Лютнер <дата отгрузки>» или создаёт новую.
+    """
+    name = _supply_name(order)
+    supply_id = wb_api.find_active_supply(name)
+    if supply_id:
+        return supply_id
+    supply_id = str(wb_api.supply_create(name).get("id") or "")
+    if not supply_id:
+        raise RuntimeError(f"не удалось создать поставку '{name}'")
+    log.info("создана поставка '%s' -> %s", name, supply_id)
+    return supply_id
+
+
+def _sticker_for(order_id: int) -> str:
+    """
+    Стикер появляется только ПОСЛЕ добавления заказа в поставку.
+    Возвращает строку «partA partB».
+    """
+    resp = wb_api.stickers([order_id])
+    for st in (resp.get("stickers") or []):
+        a, b = st.get("partA"), st.get("partB")
+        if a and b:
+            return f"{a} {b}"
+    raise RuntimeError(f"стикер не получен для заказа {order_id}")
+
+
 def process_order(order: dict, dry_run: bool) -> str:
     wb_id = order["id"]
     skus = order.get("skus") or []
@@ -93,7 +126,11 @@ def process_order(order: dict, dry_run: bool) -> str:
 
     conn = db.get_conn()
     try:
-        if conn.execute("SELECT 1 FROM orders WHERE wb_order_id=?", (wb_id,)).fetchone():
+        row = conn.execute("SELECT status FROM orders WHERE wb_order_id=?",
+                           (wb_id,)).fetchone()
+        # Пропускаем только то, что доведено до конца. Промежуточные состояния
+        # (напр. не получили стикер) повторяем на следующем запуске.
+        if row and row["status"] in ("created", "no_mapping", "dry_run"):
             return "skip"
 
         if not barcode:
@@ -108,7 +145,6 @@ def process_order(order: dict, dry_run: bool) -> str:
             alert("Неизвестный баркод", f"order {wb_id}, barcode {barcode} нет в mapping")
             return "no_mapping"
 
-        comment = f"Wildberries, отгрузка {_shipment_date(order)}"
         items = {"article": m["article"], "qty": qty, "barcode": barcode}
 
         if m["spb"] < qty:
@@ -122,10 +158,31 @@ def process_order(order: dict, dry_run: bool) -> str:
             return reason
 
         if dry_run:
+            comment = (f"Wildberries, отгрузка {_shipment_date(order)}, "
+                       f"Стикер <будет после поставки>")
             _save(conn, wb_id, "dry_run", comment=comment, items=items)
-            log.info("[dry-run] would create Lutner order for WB %s (%s x%s)",
-                     wb_id, m["article"], qty)
+            log.info("[dry-run] would add WB %s to supply '%s' and create "
+                     "Lutner order (%s x%s)",
+                     wb_id, _supply_name(order), m["article"], qty)
             return "dry_run"
+
+        # 1) Поставка: находим активную «Лютнер <дата>» или создаём новую.
+        # 2) Добавляем заказ -> он переходит в «На сборке», появляется стикер.
+        # 3) Только потом создаём заказ в Lutner — с номером стикера в комменте.
+        # При сбое на любом шаге заказ в Lutner НЕ создаём: повторим в след. цикл.
+        try:
+            supply_id = _ensure_supply(order)
+            wb_api.supply_add_order(supply_id, wb_id)
+            sticker = _sticker_for(wb_id)
+        except Exception as se:  # noqa: BLE001
+            _save(conn, wb_id, "pending_supply", items=items,
+                  error={"stage": "supply/sticker", "exc": str(se)})
+            log.warning("WB %s: поставка/стикер не готовы (%s), повтор позже",
+                        wb_id, se)
+            return "pending_supply"
+
+        comment = (f"Wildberries, отгрузка {_shipment_date(order)}, "
+                   f"Стикер {sticker}")
 
         payload = {
             "profile": int(config.LUTNER_PROFILE_ID) if config.LUTNER_PROFILE_ID else None,
