@@ -130,7 +130,8 @@ def process_order(order: dict, dry_run: bool) -> str:
                            (wb_id,)).fetchone()
         # Пропускаем только то, что доведено до конца. Промежуточные состояния
         # (напр. не получили стикер) повторяем на следующем запуске.
-        if row and row["status"] in ("created", "no_mapping", "dry_run"):
+        # manual — обработан вручную вне системы, автоматика не трогает.
+        if row and row["status"] in ("created", "no_mapping", "dry_run", "manual"):
             return "skip"
 
         if not barcode:
@@ -172,7 +173,10 @@ def process_order(order: dict, dry_run: bool) -> str:
         # При сбое на любом шаге заказ в Lutner НЕ создаём: повторим в след. цикл.
         try:
             supply_id = _ensure_supply(order)
-            wb_api.supply_add_order(supply_id, wb_id)
+            # Идемпотентность: если после частичного сбоя заказ уже в поставке,
+            # повторный PATCH вернёт 409 (а WB считает его как 10 запросов).
+            if wb_id not in wb_api.supply_order_ids(supply_id):
+                wb_api.supply_add_orders(supply_id, [wb_id])
             sticker = _sticker_for(wb_id)
         except Exception as se:  # noqa: BLE001
             _save(conn, wb_id, "pending_supply", items=items,

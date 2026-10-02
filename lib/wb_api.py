@@ -122,14 +122,29 @@ def supply_create(name: str) -> dict:
                     json_body={"name": name})
 
 
-def supply_add_order(supply_id: str, order_id: int) -> dict:
+def supply_add_orders(supply_id: str, order_ids: list[int]) -> dict:
     """
-    Добавить сборочное задание к поставке.
-    Переводит заказ в статус confirm («На сборке») — после этого
-    у заказа появляется стикер.
+    Добавить сборочные задания к поставке (до 100 за раз).
+    Переводит заказы в статус confirm («На сборке») — после этого
+    у заказов появляются стикеры.
+    Старый метод /api/v3/supplies/{id}/orders/{orderId} отключён WB (404).
     """
     return _request("PATCH", config.WB_API_BASE,
-                    f"/api/v3/supplies/{supply_id}/orders/{order_id}")
+                    f"/api/marketplace/v3/supplies/{supply_id}/orders",
+                    json_body={"orders": order_ids})
+
+
+def supply_order_ids(supply_id: str) -> list[int]:
+    """ID заданий, уже привязанных к поставке."""
+    data = _request("GET", config.WB_API_BASE,
+                    f"/api/marketplace/v3/supplies/{supply_id}/order-ids")
+    return data.get("orderIds") or []
+
+
+def supply_delete(supply_id: str) -> dict:
+    """Удалить поставку. Работает только для активной пустой поставки."""
+    return _request("DELETE", config.WB_API_BASE,
+                    f"/api/v3/supplies/{supply_id}")
 
 
 def find_active_supply(name: str) -> str | None:
