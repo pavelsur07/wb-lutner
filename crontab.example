@@ -31,8 +31,8 @@ PATH=/usr/bin:/bin
 # Бэкап БД + ротация 7 дней
 0 2 * * * sqlite3 /opt/wb-lutner/data/db.sqlite ".backup /opt/wb-lutner/data/db-$(date +\%F).sqlite" && find /opt/wb-lutner/data -name "db-*.sqlite" -mtime +7 -delete
 
-# --- Есть в репозитории, но на проде НЕ включено ---
 # Проверка баланса Lutner перед 8:00
-# 30 6 * * *  flock -n /tmp/balance.lock  -c "cd /opt/wb-lutner && venv/bin/python check_balance.py >> logs/cron_balance.log 2>&1"
+30 6 * * *  flock -n /tmp/balance.lock  -c "cd /opt/wb-lutner && venv/bin/python check_balance.py >> logs/cron_balance.log 2>&1"
+
 # Утреннее письмо менеджеру Lutner (запас до 8:00)
-# 30 7 * * *  flock -n /tmp/morning.lock  -c "cd /opt/wb-lutner && venv/bin/python morning_report.py >> logs/cron_morning.log 2>&1"
+30 7 * * *  flock -n /tmp/morning.lock  -c "cd /opt/wb-lutner && venv/bin/python morning_report.py >> logs/cron_morning.log 2>&1"
