@@ -71,7 +71,7 @@ def warehouse_list() -> list[dict]:
 
 # --- Товары ---
 def product_list(last_id: str = "", limit: int = 1000) -> dict:
-    """Постранично. Возвращает result{items[], total, last_id}."""
+    """Постранично. Возвращает result{items[], total_items, last_id}."""
     body = {"filter": {"visibility": "ALL"}, "limit": limit}
     if last_id:
         body["last_id"] = last_id
