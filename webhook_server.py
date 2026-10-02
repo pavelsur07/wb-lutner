@@ -22,6 +22,13 @@ db.init_db()  # идемпотентно — гарантируем схему �
 
 app = Flask(__name__)
 
+if config.UI_USER and config.UI_PASSWORD:
+    from lib.ui import bp as ui_bp
+    app.register_blueprint(ui_bp)
+    log.info("UI включён: /ui/ (пользователь %s)", config.UI_USER)
+else:
+    log.warning("UI_USER/UI_PASSWORD не заданы в .env — /ui/ отключён")
+
 
 def _upsert_stock(conn, item: dict) -> None:
     uuid = str(item.get("id") or "").strip()

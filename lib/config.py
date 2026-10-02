@@ -52,6 +52,10 @@ WB_WAREHOUSE_ID = _get("WB_WAREHOUSE_ID")
 # --- Webhook ---
 WEBHOOK_SECRET_PATH = _get("WEBHOOK_SECRET_PATH")
 
+# --- UI (один статичный пользователь, HTTP Basic) ---
+UI_USER = _get("UI_USER")
+UI_PASSWORD = _get("UI_PASSWORD")
+
 # --- SMTP (Яндекс.Почта, пароль приложения) ---
 SMTP_HOST = _get("SMTP_HOST", "smtp.yandex.ru")
 SMTP_PORT = int(_get("SMTP_PORT", "465"))

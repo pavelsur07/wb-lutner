@@ -282,6 +282,7 @@ def run(dry_run: bool) -> int:
         r = process_order(o, dry_run)
         stats[r] = stats.get(r, 0) + 1
     log.info("cycle done: fetched=%s %s", len(orders), stats)
+    db.set_state("last_cycle_wb", datetime.now(timezone.utc).isoformat())
     if not dry_run:
         _alert_stuck_pending_supply()
     return 0

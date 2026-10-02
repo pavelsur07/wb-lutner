@@ -1,0 +1,89 @@
+{% extends "ui/base.html" %}
+{% block title %}{{ marketplace }}{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <h1 class="h4 mb-0">Заказы {{ marketplace }}</h1>
+  <form method="get">
+    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">Все статусы</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {{ 'selected' if s == status }}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <span class="text-muted small">всего: {{ total }}</span>
+  {% if last_check %}
+  <span class="ms-auto badge text-bg-success border">Проверено: {{ last_check }}</span>
+  {% endif %}
+  {% if last_update_date %}
+  <span class="{{ '' if last_check else 'ms-auto' }} badge text-bg-light border text-secondary">Обновлено: {{ last_update_date }}</span>
+  <span class="badge text-bg-light border text-secondary">{{ last_update_time }} МСК</span>
+  {% endif %}
+</div>
+
+<div class="table-responsive">
+<table class="table table-sm table-hover align-middle">
+  <thead>
+    <tr>
+      <th>Заказ</th>
+      <th>Статус</th>
+      <th>Lutner</th>
+      <th>Состав</th>
+      <th>Комментарий</th>
+      <th>Создан (МСК)</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for o in orders %}
+    <tr>
+      <td class="text-nowrap">{{ o.id }}</td>
+      <td><span class="badge text-bg-{{ o.status_class }}">{{ o.status }}</span></td>
+      <td>{{ o.lutner_id }}</td>
+      <td class="small">{{ o.items_str }}</td>
+      <td class="small">{{ o.comment }}</td>
+      <td class="text-nowrap small">{{ o.created }}</td>
+      <td>
+        {% if o.error %}
+        <details>
+          <summary class="text-danger small" role="button">ошибка</summary>
+          <pre class="small mb-0 mt-1">{{ o.error }}</pre>
+        </details>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="text-center text-muted py-4">Заказов пока нет</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if pages > 1 %}
+{% set lo = [1, page - 3] | max %}
+{% set hi = [pages, page + 3] | min %}
+<nav>
+  <ul class="pagination pagination-sm">
+    <li class="page-item {{ 'disabled' if page <= 1 }}">
+      <a class="page-link" href="{{ url_for(endpoint, page=page - 1, status=status) }}">&larr;</a>
+    </li>
+    {% if lo > 1 %}
+    <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, page=1, status=status) }}">1</a></li>
+    {% if lo > 2 %}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>{% endif %}
+    {% endif %}
+    {% for p in range(lo, hi + 1) %}
+    <li class="page-item {{ 'active' if p == page }}">
+      <a class="page-link" href="{{ url_for(endpoint, page=p, status=status) }}">{{ p }}</a>
+    </li>
+    {% endfor %}
+    {% if hi < pages %}
+    {% if hi < pages - 1 %}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>{% endif %}
+    <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, page=pages, status=status) }}">{{ pages }}</a></li>
+    {% endif %}
+    <li class="page-item {{ 'disabled' if page >= pages }}">
+      <a class="page-link" href="{{ url_for(endpoint, page=page + 1, status=status) }}">&rarr;</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+{% endblock %}
