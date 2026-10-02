@@ -42,6 +42,7 @@ def _request(path: str, json_body: dict | None = None) -> dict:
     url = BASE + path
     last_exc = None
     for attempt in range(MAX_RETRIES + 1):
+        delay = BACKOFF[min(attempt, len(BACKOFF) - 1)]
         try:
             resp = requests.post(url, headers=_headers(),
                                  json=json_body or {}, timeout=TIMEOUT)
@@ -50,6 +51,12 @@ def _request(path: str, json_body: dict | None = None) -> dict:
                             path, resp.status_code, resp.text[:300])
                 resp.raise_for_status()
             if resp.status_code == 429 or resp.status_code >= 500:
+                log.warning("Ozon %s -> %s (попытка %s): %s",
+                            path, resp.status_code, attempt + 1,
+                            resp.text[:200])
+                ra = resp.headers.get("Retry-After", "")
+                if ra.isdigit():
+                    delay = max(delay, int(ra))
                 raise requests.HTTPError(f"{resp.status_code}")
             resp.raise_for_status()
             return resp.json() if resp.content else {}
@@ -60,7 +67,7 @@ def _request(path: str, json_body: dict | None = None) -> dict:
         except requests.RequestException as e:
             last_exc = e
         if attempt < MAX_RETRIES:
-            time.sleep(BACKOFF[attempt])
+            time.sleep(delay)
     raise RuntimeError(f"Ozon {path} failed after retries: {last_exc}")
 
 
@@ -115,27 +122,37 @@ def stocks_by_warehouse(offer_ids: list[str], limit: int = 1000,
 
 
 # --- Заказы (отправления FBS) ---
-def postings_unfulfilled(limit: int = 100, offset: int = 0,
-                         days_back: int = 3, days_forward: int = 30) -> dict:
+def postings_unfulfilled(limit: int = 100, days_back: int = 3,
+                         days_forward: int = 30) -> dict:
     """
-    Необработанные отправления FBS.
+    Необработанные отправления FBS — ВСЕ страницы (курсорная пагинация v4).
+    v3-метод с конца августа 2026 задушен лимитами Ozon (постоянные 429
+    даже на одиночных запросах) — используем /v4/posting/fbs/unfulfilled/list.
     Ozon требует в фильтре период cutoff_from/cutoff_to (дата сборки),
     иначе отвечает 400 "mismatch between cutoff & delivery date".
     """
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
-    body = {
-        "dir": "ASC",
-        "filter": {
-            "cutoff_from": (now - timedelta(days=days_back)).strftime(fmt),
-            "cutoff_to": (now + timedelta(days=days_forward)).strftime(fmt),
-        },
-        "limit": limit,
-        "offset": offset,
-        "with": {"analytics_data": False, "financial_data": False},
-    }
-    return _request("/v3/posting/fbs/unfulfilled/list", body).get("result", {})
+    postings: list[dict] = []
+    cursor = ""
+    while True:
+        body = {
+            "dir": "ASC",
+            "filter": {
+                "cutoff_from": (now - timedelta(days=days_back)).strftime(fmt),
+                "cutoff_to": (now + timedelta(days=days_forward)).strftime(fmt),
+            },
+            "limit": limit,
+            "cursor": cursor,
+            "with": {"analytics_data": False, "financial_data": False},
+        }
+        result = _request("/v4/posting/fbs/unfulfilled/list", body)
+        postings += result.get("postings") or []
+        cursor = result.get("cursor") or ""
+        if not result.get("has_next") or not cursor:
+            break
+    return {"postings": postings, "count": len(postings)}
 
 
 def posting_get(posting_number: str) -> dict:

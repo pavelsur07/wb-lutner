@@ -29,6 +29,15 @@ from lib.mailer import alert
 log = get_logger("ozon_main")
 MSK = timezone(timedelta(hours=3))
 
+# Защита от повторной/ложной обработки:
+#  - берём только отправления в статусах awaiting_packaging (ждёт сборки)
+#    и awaiting_deliver (собрано, ждёт отгрузки); всё, что уже дальше по
+#    цепочке (delivering, delivered, ...) или отменено, — товар ушёл без нас,
+#    создавать заказ поздно.
+#  - не создаём заказы по отправлениям старше STALE_HOURS (догон после сбоя).
+PROCESSABLE_STATUSES = {"awaiting_packaging", "awaiting_deliver"}
+STALE_HOURS = 24
+
 
 def _shipment_date(posting: dict) -> str:
     """
@@ -128,7 +137,8 @@ def process_posting(posting: dict, dry_run: bool) -> str:
         comment = f"Ozon, отгрузка {_shipment_date(posting)}, Отправление {pn}"
 
         if dry_run:
-            _save(conn, pn, "dry_run", comment=comment, items=items_info)
+            # dry-run НЕ записывает в ozon_orders — иначе эти отправления
+            # навсегда попадут в skip и реальный прогон их не обработает
             log.info("[dry-run] would create Lutner order for Ozon %s (%s)",
                      pn, lutner_items)
             return "dry_run"
@@ -166,6 +176,18 @@ def process_posting(posting: dict, dry_run: bool) -> str:
         conn.close()
 
 
+def _posting_age_hours(posting: dict) -> float | None:
+    """Возраст отправления в часах (от in_process_at/created_at, UTC)."""
+    created = posting.get("in_process_at") or posting.get("created_at")
+    if not created:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+
+
 def run(dry_run: bool) -> int:
     config.require("OZON_WAREHOUSE_ID")
     our_wh = str(config.OZON_WAREHOUSE_ID)
@@ -189,11 +211,56 @@ def run(dry_run: bool) -> int:
         log.info("пропущено %s отправлений с других складов (наш: %s)",
                  skipped, our_wh)
 
-    stats: dict[str, int] = {}
+    conn = db.get_conn()
+    try:
+        known = {r[0] for r in
+                 conn.execute("SELECT posting_number FROM ozon_orders")}
+    finally:
+        conn.close()
+
+    # Разбираем новые отправления до создания заказов:
+    # чужой статус / слишком старые — фиксируем как пропуск и не трогаем.
+    fresh, wrong_status, stale = [], [], []
     for p in postings:
+        pn = p.get("posting_number")
+        if not pn or pn in known:
+            continue
+        if (p.get("status") or "") not in PROCESSABLE_STATUSES:
+            wrong_status.append(p)
+            continue
+        age = _posting_age_hours(p)
+        if age is not None and age > STALE_HOURS:
+            stale.append(p)
+            continue
+        fresh.append(p)
+
+    if wrong_status or stale:
+        conn = db.get_conn()
+        try:
+            for p in wrong_status:
+                _save(conn, p.get("posting_number"), "skipped_status",
+                      comment=f"status={p.get('status')}")
+            for p in stale:
+                _save(conn, p.get("posting_number"), "skipped_stale",
+                      comment="in_process_at="
+                              f"{p.get('in_process_at') or p.get('created_at')}")
+        finally:
+            conn.close()
+        log.info("пропущено без создания заказов: по статусу=%s, старые=%s",
+                 len(wrong_status), len(stale))
+    if stale:
+        alert("Ozon: пропущены старые отправления",
+              f"{len(stale)} шт. старше {STALE_HOURS}ч — заказы НЕ создавались, "
+              "проверьте вручную:\n"
+              + "\n".join(str(p.get("posting_number")) for p in stale))
+
+    stats: dict[str, int] = {"skipped_status": len(wrong_status),
+                             "skipped_stale": len(stale)}
+    for p in fresh:
         r = process_posting(p, dry_run)
         stats[r] = stats.get(r, 0) + 1
     log.info("cycle done: fetched=%s %s", len(postings), stats)
+    db.set_state("last_cycle_ozon", datetime.now(timezone.utc).isoformat())
     return 0
 
 
