@@ -20,23 +20,10 @@ import sys
 from lib import config, db, ozon_api
 from lib.logging_setup import get_logger
 from lib.mailer import alert
+from lib.stock_rules import sellable
 
 log = get_logger("sync_stock_to_ozon")
 BATCH = 100  # лимит Ozon: 100 пар «товар-склад» за запрос
-MIN_STOCK = int(config._get("MIN_STOCK_THRESHOLD", "3") or 3)
-
-def _sellable(raw) -> int:
-    """
-    Остаток, который отдаём маркетплейсу.
-
-    - отрицательные значения Lutner обрезаем нулём (WB отклоняет батч);
-    - если на складе Lutner меньше MIN_STOCK_THRESHOLD (по умолчанию 3),
-      отдаём 0 — страховка от оверселла: 1-2 шт могут уйти в другом канале
-      раньше, чем мы успеем оформить отгрузку.
-    """
-    amount = max(0, int(raw))
-    return 0 if amount < MIN_STOCK else amount
-
 
 
 def run(dry_run: bool = False, only: str | None = None) -> int:
@@ -54,7 +41,7 @@ def run(dry_run: bool = False, only: str | None = None) -> int:
     conn.close()
 
     stocks = [
-        {"offer_id": r["offer_id"], "stock": _sellable(r["amount"]),
+        {"offer_id": r["offer_id"], "stock": sellable(r["amount"]),
          "warehouse_id": warehouse_id}
         for r in rows if r["offer_id"]
     ]
