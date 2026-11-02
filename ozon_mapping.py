@@ -22,7 +22,10 @@ def run() -> int:
     matched = 0
     no_article: list[str] = []
     try:
-        for item in ozon_api.iter_products():
+        # Сначала выкачиваем всё из Ozon: пока идут HTTP-запросы, write-lock не берём.
+        items = list(ozon_api.iter_products())
+        rows = []
+        for item in items:
             offer_id = (item.get("offer_id") or "").strip()
             if not offer_id:
                 continue
@@ -35,19 +38,22 @@ def run() -> int:
                 no_article.append(offer_id)
                 continue
 
-            conn.execute(
-                """INSERT INTO ozon_mapping
-                       (offer_id, product_id, sku, lutner_uuid, lutner_article)
-                   VALUES (?,?,?,?,?)
-                   ON CONFLICT(offer_id) DO UPDATE SET
-                     product_id=excluded.product_id,
-                     sku=excluded.sku,
-                     lutner_uuid=excluded.lutner_uuid,
-                     lutner_article=excluded.lutner_article""",
-                (offer_id, item.get("product_id"), item.get("sku"),
-                 row["uuid"], row["article"]),
-            )
+            rows.append((offer_id, item.get("product_id"), item.get("sku"),
+                         row["uuid"], row["article"]))
             matched += 1
+
+        # Одна короткая транзакция на запись.
+        conn.executemany(
+            """INSERT INTO ozon_mapping
+                   (offer_id, product_id, sku, lutner_uuid, lutner_article)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT(offer_id) DO UPDATE SET
+                 product_id=excluded.product_id,
+                 sku=excluded.sku,
+                 lutner_uuid=excluded.lutner_uuid,
+                 lutner_article=excluded.lutner_article""",
+            rows,
+        )
         conn.commit()
     finally:
         conn.close()

@@ -47,7 +47,11 @@ def run() -> int:
     no_article = []   # карточки WB без пары в каталоге Lutner
     no_barcode = []   # карточки WB без баркода (нечего слать в WB)
     try:
-        for card in _iter_cards():
+        # Сначала выкачиваем всё из WB: пока идут HTTP-запросы, write-lock не берём.
+        # Иначе остальные скрипты и webhook падают с "database is locked".
+        cards = list(_iter_cards())
+        rows = []
+        for card in cards:
             vendor_code = (card.get("vendorCode") or "").strip()
             nm_id = card.get("nmID")
             if not vendor_code:
@@ -66,16 +70,19 @@ def run() -> int:
                 no_barcode.append(vendor_code)
                 continue
 
-            conn.execute(
-                """INSERT INTO mapping (wb_barcode, wb_nmid, lutner_uuid, lutner_article)
-                   VALUES (?,?,?,?)
-                   ON CONFLICT(wb_barcode) DO UPDATE SET
-                     wb_nmid=excluded.wb_nmid,
-                     lutner_uuid=excluded.lutner_uuid,
-                     lutner_article=excluded.lutner_article""",
-                (wb_barcode, nm_id, row["uuid"], row["article"]),
-            )
+            rows.append((wb_barcode, nm_id, row["uuid"], row["article"]))
             matched += 1
+
+        # Одна короткая транзакция на запись.
+        conn.executemany(
+            """INSERT INTO mapping (wb_barcode, wb_nmid, lutner_uuid, lutner_article)
+               VALUES (?,?,?,?)
+               ON CONFLICT(wb_barcode) DO UPDATE SET
+                 wb_nmid=excluded.wb_nmid,
+                 lutner_uuid=excluded.lutner_uuid,
+                 lutner_article=excluded.lutner_article""",
+            rows,
+        )
         conn.commit()
     finally:
         conn.close()
