@@ -1,6 +1,6 @@
 # План: убрать `database is locked` из-за initial_mapping / ozon_mapping
 
-Дата: 02.11.2026 · Статус: **фикс сделан (GREEN 7/7), ожидает деплоя**
+Дата: 02.11.2026 · Статус: **задеплоено 02.11.2026 18:05 (4165db2), идёт приёмка 24 ч**
 
 ## 1. Проблема
 
@@ -96,10 +96,10 @@ API замоканы на уровне `wb_api.cards_list` / `ozon_api.product_l
 - [x] Повторный запуск тестов стабилен (без flaky)
 
 **Деплой**
-- [ ] Коммит в `master`
-- [ ] `./deploy.sh wb-prod` прошёл, `wb-lutner-webhook` active
-- [ ] md5 `initial_mapping.py` / `ozon_mapping.py` на проде = локальным
-- [ ] Ручной прогон на проде от `wblutner`: `venv/bin/python initial_mapping.py` → matched ≈ 370–390, как раньше
+- [x] Коммит в `master` (4165db2)
+- [x] `./deploy.sh wb-prod` прошёл, `wb-lutner-webhook` active
+- [x] md5 `initial_mapping.py` / `ozon_mapping.py` на проде = локальным
+- [x] Ручной прогон на проде от `wblutner`: `venv/bin/python initial_mapping.py` → matched ≈ 370–390, как раньше (18:08: WB 370, Ozon 324; тесты на проде 7/7 OK)
 
 **Приёмка на проде (24 ч после деплоя)**
 - [ ] `database is locked` = 0 во всех `logs/*.log` с момента деплоя
