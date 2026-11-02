@@ -1,0 +1,94 @@
+{% extends "ui/base.html" %}
+{% block title %}График отгрузок{% endblock %}
+{% block content %}
+<div class="mb-3" style="max-width: 960px">
+  <h1 class="h4">График отгрузок</h1>
+  <p class="text-muted mb-0">
+    Пн–Пт рабочие всегда. Заказ до 07:00 МСК отгружается в тот же день,
+    после 07:00 — в следующий рабочий день (в субботу и воскресенье тоже 07:00).
+    Изменения применяются к <strong>новым</strong> заказам в течение 5 минут;
+    у уже созданных заказов дата отгрузки не меняется.
+  </p>
+</div>
+
+{% if saved %}
+<div class="alert alert-success" style="max-width: 960px" role="status">
+  График {{ saved }} сохранён — применится к новым заказам.
+</div>
+{% endif %}
+
+<div class="row g-3" style="max-width: 990px">
+{% for m in markets %}
+  <div class="col-12 col-md-6">
+    <form class="card h-100 js-ship" method="post"
+          action="{{ url_for('ui.shipping_settings_save', market=m.key) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="card-header fw-semibold">{{ m.title }}</div>
+      <div class="card-body">
+        <div class="mb-2 small text-muted">Рабочие дни</div>
+        <div class="d-flex flex-wrap gap-1 mb-3" aria-label="Будние дни всегда рабочие">
+          {% for d in ["Пн", "Вт", "Ср", "Чт", "Пт"] %}
+          <span class="badge text-bg-light border text-secondary">{{ d }} ✓</span>
+          {% endfor %}
+        </div>
+
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" name="sat" value="1"
+                 id="{{ m.key }}-sat" {{ 'checked' if m.weekend.sat }}>
+          <label class="form-check-label" for="{{ m.key }}-sat">Суббота — рабочий день</label>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" role="switch" name="sun" value="1"
+                 id="{{ m.key }}-sun" {{ 'checked' if m.weekend.sun }}>
+          <label class="form-check-label" for="{{ m.key }}-sun">Воскресенье — рабочий день</label>
+        </div>
+
+        <div class="small text-muted mb-1">Предпросмотр: куда уйдёт заказ</div>
+        {% for combo, rows in m.previews.items() %}
+        <table class="table table-sm small mb-0 js-preview" data-combo="{{ combo }}"
+               {{ '' if combo == ('%d%d' % (m.weekend.sat, m.weekend.sun)) else 'hidden' }}>
+          <tbody>
+          {% for r in rows %}
+            <tr><td>{{ r.order }}</td><td>→</td><td class="fw-semibold">отгрузка {{ r.ship }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% endfor %}
+      </div>
+      <div class="card-footer d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-primary btn-sm js-save" disabled>Сохранить {{ m.title }}</button>
+        <span class="small text-warning js-dirty" hidden>есть несохранённые изменения</span>
+        <span class="small text-muted ms-auto">
+          {% if m.updated %}Изменено: {{ m.updated }} МСК{% else %}По умолчанию: Сб, Вс выходные{% endif %}
+        </span>
+      </div>
+    </form>
+  </div>
+{% endfor %}
+</div>
+
+<p class="small text-muted mt-3" style="max-width: 960px">
+  ⚠ График склада должен совпадать с настройками в личном кабинете WB / Ozon —
+  иначе площадка будет считать заказы просроченными и штрафовать.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("form.js-ship").forEach(function (form) {
+  var sat = form.querySelector("[name=sat]"), sun = form.querySelector("[name=sun]");
+  var initial = (sat.checked ? "1" : "0") + (sun.checked ? "1" : "0");
+  function update() {
+    var combo = (sat.checked ? "1" : "0") + (sun.checked ? "1" : "0");
+    form.querySelectorAll(".js-preview").forEach(function (t) {
+      t.hidden = t.dataset.combo !== combo;
+    });
+    var dirty = combo !== initial;
+    form.querySelector(".js-save").disabled = !dirty;
+    form.querySelector(".js-dirty").hidden = !dirty;
+  }
+  sat.addEventListener("change", update);
+  sun.addEventListener("change", update);
+});
+</script>
+{% endblock %}

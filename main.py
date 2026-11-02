@@ -13,7 +13,7 @@ import json
 import sys
 from datetime import datetime, timezone, timedelta
 
-from lib import config, db, wb_api, lutner_api
+from lib import config, db, shipping, wb_api, lutner_api
 from lib.logging_setup import get_logger
 from lib.mailer import alert
 
@@ -22,32 +22,8 @@ MSK = timezone(timedelta(hours=3))
 
 
 def _shipment_date(order: dict) -> str:
-    """
-    Дата отгрузки по времени заказа в WB (createdAt, приходит в UTC), в МСК.
-
-    Дедлайн приёма «день в день» у Lutner — 8:00 МСК:
-      заказ 00:00–07:00 МСК -> успеваем сегодня
-      заказ 07:01–23:59 МСК -> отгрузка следующего дня
-    """
-    created = order.get("createdAt")
-    dt = None
-    if created:
-        try:
-            dt = datetime.fromisoformat(str(created).replace("Z", "+00:00")).astimezone(MSK)
-        except ValueError:
-            log.warning("не разобрал createdAt=%r, беру текущее время", created)
-    if dt is None:
-        dt = datetime.now(MSK)
-
-    ship = dt.date()
-    if (dt.hour, dt.minute) > (7, 0):
-        ship += timedelta(days=1)
-
-    # Lutner не отгружает в выходные: если дата отгрузки попала на
-    # субботу(5) или воскресенье(6) — переносим на понедельник.
-    while ship.weekday() >= 5:
-        ship += timedelta(days=1)
-    return ship.strftime("%d.%m.%Y")
+    """Дата отгрузки DD.MM.YYYY — правило и график выходных в lib/shipping.py."""
+    return shipping.shipment_date_str("wb", order.get("createdAt"), log)
 
 
 def _lookup(conn, barcode: str):

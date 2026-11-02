@@ -1,7 +1,9 @@
 """
-lib/ui.py — минимальный read-only UI: списки заказов WB и отправлений Ozon.
+lib/ui.py — минимальный UI: списки заказов WB и отправлений Ozon (только
+просмотр) и страница «График отгрузок» (/ui/settings/shipping).
 
-- Только просмотр: никаких действий с заказами.
+- С заказами никаких действий. Единственная запись — график выходных
+  площадок (lib/shipping.py), POST защищён CSRF-токеном.
 - Доступ: HTTP Basic, один статичный пользователь из .env (UI_USER/UI_PASSWORD).
 - Bootstrap 5 через CDN, серверный рендеринг Jinja2 (templates/ui/).
 
@@ -14,10 +16,10 @@ import hmac
 import json
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, Response, redirect, render_template, request, url_for
+from flask import (Blueprint, Response, abort, redirect, render_template,
+                   request, url_for)
 
-from lib import db
-from lib import config
+from lib import config, db, shipping
 
 bp = Blueprint("ui", __name__, url_prefix="/ui")
 
@@ -185,3 +187,82 @@ def _orders_page(market: str):
         last_update_time=last_update_time,
         last_check=last_check,
     )
+
+
+# --- График отгрузок -----------------------------------------------------
+
+_MARKET_TITLES = {"wb": "Wildberries", "ozon": "Ozon"}
+_WD = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+
+def _csrf_token() -> str:
+    """
+    Токен без сессии, считается от пароля UI. Basic-auth браузер шлёт сам, поэтому без
+    токена чужая страница могла бы отправить форму от имени вошедшего.
+    """
+    return hmac.new((config.UI_PASSWORD or "").encode(), b"ui-settings-csrf",
+                    "sha256").hexdigest()
+
+
+def _preview(weekend: dict) -> list[dict]:
+    """Куда уйдёт заказ, пришедший после 07:00 в ближайшие Пт/Сб/Вс."""
+    today = datetime.now(MSK).date()
+    fri = today + timedelta(days=(4 - today.weekday()) % 7)
+    rows = []
+    for d in (fri, fri + timedelta(days=1), fri + timedelta(days=2)):
+        at = datetime(d.year, d.month, d.day, 10, 0, tzinfo=MSK)
+        ship = shipping.ship_date(at, weekend)
+        rows.append({
+            "order": f"{_WD[d.weekday()]} {d:%d.%m} после 07:00",
+            "ship": f"{_WD[ship.weekday()]} {ship:%d.%m}",
+        })
+    return rows
+
+
+def _updated_at(market: str) -> str:
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT updated_at FROM system_state WHERE key=?",
+                           (shipping._key(market),)).fetchone()
+    finally:
+        conn.close()
+    return _fmt_dt(row["updated_at"]) if row else ""
+
+
+@bp.get("/settings/shipping")
+def shipping_settings():
+    markets = []
+    for m in shipping.MARKETS:
+        wk = shipping.get_weekend(m)
+        markets.append({
+            "key": m,
+            "title": _MARKET_TITLES[m],
+            "weekend": wk,
+            "updated": _updated_at(m),
+            # предпросмотр для всех 4 комбинаций — JS показывает нужную
+            # ещё до сохранения
+            "previews": {
+                f"{int(sat)}{int(sun)}": _preview({"sat": sat, "sun": sun})
+                for sat in (False, True) for sun in (False, True)
+            },
+        })
+    return render_template(
+        "ui/shipping.html",
+        active="shipping",
+        markets=markets,
+        saved=_MARKET_TITLES.get(request.args.get("saved", "")),
+        csrf=_csrf_token(),
+    )
+
+
+@bp.post("/settings/shipping/<market>")
+def shipping_settings_save(market: str):
+    if market not in shipping.MARKETS:
+        abort(404)
+    if not hmac.compare_digest(request.form.get("csrf", ""), _csrf_token()):
+        abort(400)
+    shipping.set_weekend(market,
+                         sat=request.form.get("sat") == "1",
+                         sun=request.form.get("sun") == "1")
+    # PRG: после POST — редирект, F5 не отправит форму повторно
+    return redirect(url_for("ui.shipping_settings", saved=market))

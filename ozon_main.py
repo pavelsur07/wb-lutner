@@ -8,7 +8,8 @@ ozon_main.py — забирает необработанные отправле�
     со всеми товарами
   - берём только отправления НАШЕГО склада (OZON_WAREHOUSE_ID)
 
-Правила даты отгрузки — те же, что для WB (дедлайн 7:00 МСК, выходные -> ПН).
+Правило даты отгрузки — lib/shipping.py (дедлайн 7:00 МСК, график выходных
+Ozon настраивается отдельно в /ui/settings/shipping).
 Комментарий: "Ozon, отгрузка DD.MM.YYYY"
 
 Идемпотентность: PRIMARY KEY ozon_orders.posting_number.
@@ -22,7 +23,7 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 
-from lib import config, db, lutner_api, ozon_api
+from lib import config, db, shipping, lutner_api, ozon_api
 from lib.logging_setup import get_logger
 from lib.mailer import alert
 
@@ -40,29 +41,9 @@ STALE_HOURS = 24
 
 
 def _shipment_date(posting: dict) -> str:
-    """
-    Дата отгрузки по времени отправления Ozon (in_process_at, UTC), в МСК.
-    Дедлайн приёма «день в день» у Lutner — 8:00 МСК:
-      до 07:00 МСК -> сегодня;  после 07:01 -> следующий день.
-    Выходные переносятся на понедельник.
-    """
+    """Дата отгрузки DD.MM.YYYY — правило и график выходных в lib/shipping.py."""
     created = posting.get("in_process_at") or posting.get("created_at")
-    dt = None
-    if created:
-        try:
-            dt = datetime.fromisoformat(str(created).replace("Z", "+00:00")).astimezone(MSK)
-        except ValueError:
-            log.warning("не разобрал дату=%r, беру текущее время", created)
-    if dt is None:
-        dt = datetime.now(MSK)
-
-    ship = dt.date()
-    if (dt.hour, dt.minute) > (7, 0):
-        ship += timedelta(days=1)
-
-    while ship.weekday() >= 5:  # сб/вс -> понедельник
-        ship += timedelta(days=1)
-    return ship.strftime("%d.%m.%Y")
+    return shipping.shipment_date_str("ozon", created, log)
 
 
 def _save(conn, posting_number, status, *, lutner_id=None, comment=None,
