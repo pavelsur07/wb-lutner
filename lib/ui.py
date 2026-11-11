@@ -1,9 +1,10 @@
 """
 lib/ui.py — минимальный UI: списки заказов WB и отправлений Ozon (только
-просмотр) и страница «График отгрузок» (/ui/settings/shipping).
+просмотр) и вкладка «Настройка»: график отгрузок (/ui/settings/shipping)
+и подключение Яндекс Маркета (/ui/settings/ym).
 
-- С заказами никаких действий. Единственная запись — график выходных
-  площадок (lib/shipping.py), POST защищён CSRF-токеном.
+- С заказами никаких действий. Запись — только настройки (график выходных,
+  подключение Маркета), все POST защищены CSRF-токеном.
 - Доступ: HTTP Basic, один статичный пользователь из .env (UI_USER/UI_PASSWORD).
 - Bootstrap 5 через CDN, серверный рендеринг Jinja2 (templates/ui/).
 
@@ -19,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from flask import (Blueprint, Response, abort, redirect, render_template,
                    request, url_for)
 
-from lib import config, db, shipping
+from lib import config, db, shipping, ym_api
 
 bp = Blueprint("ui", __name__, url_prefix="/ui")
 
@@ -266,3 +267,59 @@ def shipping_settings_save(market: str):
                          sun=request.form.get("sun") == "1")
     # PRG: после POST — редирект, F5 не отправит форму повторно
     return redirect(url_for("ui.shipping_settings", saved=market))
+
+
+# --- Яндекс Маркет: подключение ------------------------------------------
+
+def _check_csrf() -> None:
+    if not hmac.compare_digest(request.form.get("csrf", ""), _csrf_token()):
+        abort(400)
+
+
+@bp.get("/settings/ym")
+def ym_settings():
+    s = ym_api.settings()
+    chk = ym_api.last_check()
+    if chk.get("at"):
+        chk["at"] = _fmt_dt(chk["at"])
+    return render_template(
+        "ui/ym.html",
+        active="ym",
+        s=s,
+        key_masked=ym_api.mask(s["api_key"]),
+        chk=chk,
+        msg=request.args.get("msg", ""),
+        csrf=_csrf_token(),
+    )
+
+
+def _ym_save_form() -> str:
+    """Сохраняет присланные поля; возвращает код ошибки для ?msg= или ''."""
+    vals = {}
+    for f in ym_api.FIELDS:
+        if f not in request.form:
+            continue  # кнопки «выбрать» шлют только свои поля
+        v = request.form[f].strip()
+        if f == "api_key" and not v:
+            continue  # пустое поле ключа = не менять
+        if f != "api_key" and v and not v.isdigit():
+            return f"bad_{f}"
+        vals[f] = v
+    ym_api.save_settings(**vals)
+    return ""
+
+
+@bp.post("/settings/ym")
+def ym_settings_save():
+    _check_csrf()
+    return redirect(url_for("ui.ym_settings", msg=_ym_save_form() or "saved"))
+
+
+@bp.post("/settings/ym/check")
+def ym_settings_check():
+    """Сохраняет форму (если прислана) и сразу проверяет — один клик."""
+    _check_csrf()
+    err = _ym_save_form()
+    if not err:
+        ym_api.check()
+    return redirect(url_for("ui.ym_settings", msg=err or "checked"))

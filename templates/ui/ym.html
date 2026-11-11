@@ -1,0 +1,108 @@
+{% extends "ui/base.html" %}
+{% block title %}Яндекс Маркет{% endblock %}
+{% block content %}
+{% include "ui/_settings_nav.html" %}
+<div style="max-width: 960px">
+  <h1 class="h4">Яндекс Маркет</h1>
+  <h2 class="h5 mt-3">1. Подключение и проверка</h2>
+
+  {% if msg == 'saved' %}
+  <div class="alert alert-success" role="status">Настройки сохранены. Нажмите «Сохранить и проверить».</div>
+  {% elif msg.startswith('bad_') %}
+  <div class="alert alert-danger" role="alert">{{ msg[4:] }}: допускаются только цифры.</div>
+  {% endif %}
+
+  {# --- статус --- #}
+  {% if not chk %}
+  <div class="alert alert-secondary">⚪ Подключение ещё не проверялось.</div>
+  {% elif chk.ok %}
+  <div class="alert alert-success">
+    🟢 Подключено · проверено {{ chk.at }} МСК
+    {% for w in chk.warnings %}<div class="text-warning-emphasis">⚠ {{ w }}</div>{% endfor %}
+  </div>
+  {% else %}
+  <div class="alert alert-danger">🔴 Ошибка · {{ chk.at }} МСК<br><span class="small">{{ chk.error }}</span></div>
+  {% endif %}
+
+  {# --- форма --- #}
+  <form class="card mb-3" method="post" action="{{ url_for('ui.ym_settings_save') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="card-body row g-3">
+      <div class="col-12">
+        <label class="form-label" for="api_key">Api-Key</label>
+        <input class="form-control" type="password" id="api_key" name="api_key" autocomplete="off"
+               placeholder="{{ 'сохранён: ' ~ key_masked ~ ' — оставьте пустым, чтобы не менять' if key_masked else 'вставьте ключ из кабинета продавца' }}">
+        <div class="form-text">Кабинет Маркета → Настройки → API и модули → Токены авторизации.
+          Доступ: «Все методы» или «Обработка заказов и учёт товаров».</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="business_id">businessId (кабинет)</label>
+        <input class="form-control" id="business_id" name="business_id" inputmode="numeric" value="{{ s.business_id }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="campaign_id">campaignId (магазин)</label>
+        <input class="form-control" id="campaign_id" name="campaign_id" inputmode="numeric" value="{{ s.campaign_id }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="warehouse_id">warehouseId (склад)</label>
+        <input class="form-control" id="warehouse_id" name="warehouse_id" inputmode="numeric" value="{{ s.warehouse_id }}">
+      </div>
+      <div class="col-12 form-text mt-1">ID можно не вводить: если магазин и склад один, проверка подставит их сама.</div>
+    </div>
+    <div class="card-footer d-flex gap-2">
+      <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+      <button type="submit" class="btn btn-outline-primary btn-sm"
+              formaction="{{ url_for('ui.ym_settings_check') }}">Сохранить и проверить</button>
+    </div>
+  </form>
+
+  {# --- результаты проверки --- #}
+  {% if chk.campaigns %}
+  <h3 class="h6">Магазины, доступные ключу</h3>
+  <table class="table table-sm align-middle">
+    <thead><tr><th>Магазин</th><th>campaignId</th><th>Кабинет (businessId)</th><th>Модель</th><th>API</th><th></th></tr></thead>
+    <tbody>
+    {% for c in chk.campaigns %}
+      <tr class="{{ 'table-primary' if c.id|string == s.campaign_id }}">
+        <td>{{ c.name }}</td><td>{{ c.id }}</td><td>{{ c.business_name }} ({{ c.business_id }})</td>
+        <td>{{ c.placement }}</td>
+        <td><span class="badge text-bg-{{ 'success' if c.api == 'AVAILABLE' else 'danger' }}">{{ c.api }}</span></td>
+        <td>{% if c.id|string != s.campaign_id %}
+          <form method="post" action="{{ url_for('ui.ym_settings_save') }}" class="m-0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="business_id" value="{{ c.business_id }}">
+            <input type="hidden" name="campaign_id" value="{{ c.id }}">
+            <input type="hidden" name="warehouse_id" value="">
+            <button class="btn btn-link btn-sm p-0" formaction="{{ url_for('ui.ym_settings_check') }}">выбрать</button>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if chk.warehouses %}
+  <h3 class="h6">Склады магазина</h3>
+  <table class="table table-sm align-middle">
+    <thead><tr><th>Склад</th><th>warehouseId</th><th>Группа складов</th><th></th></tr></thead>
+    <tbody>
+    {% for w in chk.warehouses %}
+      <tr class="{{ 'table-primary' if w.id|string == s.warehouse_id }}">
+        <td>{{ w.name }}</td><td>{{ w.id }}</td><td>{{ w.group or '—' }}</td>
+        <td>{% if w.id|string != s.warehouse_id %}
+          <form method="post" action="{{ url_for('ui.ym_settings_save') }}" class="m-0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="warehouse_id" value="{{ w.id }}">
+            <button class="btn btn-link btn-sm p-0">выбрать</button>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if chk.warehouses|selectattr('group')|list %}
+  <p class="small text-muted">В кабинете есть группы складов — остатки будут уходить через
+    <code>PUT v2/campaigns/{id}/offers/stocks</code>.</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
