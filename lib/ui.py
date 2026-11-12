@@ -1,7 +1,8 @@
 """
 lib/ui.py — минимальный UI: списки заказов WB и отправлений Ozon (только
 просмотр) и вкладка «Настройка»: график отгрузок (/ui/settings/shipping)
-и подключение Яндекс Маркета (/ui/settings/ym).
+подключение Яндекс Маркета (/ui/settings/ym) и маппинг Маркет ↔ Lutner
+(/ui/settings/ym/mapping).
 
 - С заказами никаких действий. Запись — только настройки (график выходных,
   подключение Маркета), все POST защищены CSRF-токеном.
@@ -20,7 +21,8 @@ from datetime import datetime, timedelta, timezone
 from flask import (Blueprint, Response, abort, redirect, render_template,
                    request, url_for)
 
-from lib import config, db, shipping, ym_api
+import ym_mapping
+from lib import config, db, shipping, stock_rules, ym_api
 
 bp = Blueprint("ui", __name__, url_prefix="/ui")
 
@@ -323,3 +325,77 @@ def ym_settings_check():
     if not err:
         ym_api.check()
     return redirect(url_for("ui.ym_settings", msg=err or "checked"))
+
+
+# --- Яндекс Маркет: маппинг и остаток по правилам --------------------------
+
+_YM_FILTERS = {"matched": "m.lutner_uuid IS NOT NULL",
+               "unmatched": "m.lutner_uuid IS NULL", "all": "1"}
+
+
+def _ym_rule(row) -> tuple[int | None, str]:
+    """Остаток для Маркета по lib/stock_rules и почему такой."""
+    if not row["lutner_uuid"]:
+        return None, "нет в каталоге Lutner — не отправляем"
+    if row["store_spb"] is None:
+        return 0, "нет остатка в Lutner → 0"
+    raw = row["store_spb"]
+    val = stock_rules.sellable(raw)
+    if val == 0:
+        return 0, f"меньше {stock_rules.MIN_STOCK} → 0"
+    if raw > stock_rules.MAX_STOCK:
+        return val, f"потолок {stock_rules.MAX_STOCK}"
+    return val, "как есть"
+
+
+@bp.get("/settings/ym/mapping")
+def ym_mapping_page():
+    f = request.args.get("f", "matched")
+    if f not in _YM_FILTERS:
+        f = "matched"
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT m.*, s.store_spb FROM ym_mapping m "
+            "LEFT JOIN stock s ON s.uuid = m.lutner_uuid "
+            "ORDER BY m.lutner_uuid IS NULL, m.offer_id").fetchall()
+        st = conn.execute("SELECT updated_at FROM system_state "
+                          "WHERE key='ym_mapping_at'").fetchone()
+    finally:
+        conn.close()
+
+    items, counts = [], {"total": len(rows), "matched": 0, "zero": 0, "cap": 0, "as_is": 0}
+    for r in rows:
+        val, why = _ym_rule(r)
+        if r["lutner_uuid"]:
+            counts["matched"] += 1
+            counts["zero" if val == 0 else "cap" if why.startswith("потолок") else "as_is"] += 1
+        if f == "all" or (f == "matched") == bool(r["lutner_uuid"]):
+            items.append({**dict(r), "to_ym": val, "why": why})
+    return render_template(
+        "ui/ym_mapping.html",
+        active="ym_mapping",
+        items=items,
+        counts=counts,
+        f=f,
+        min_stock=stock_rules.MIN_STOCK,
+        max_stock=stock_rules.MAX_STOCK,
+        updated=_fmt_dt(st["updated_at"]) if st else "",
+        error=db.get_state("ym_mapping_error") or "",
+        msg=request.args.get("msg", ""),
+        csrf=_csrf_token(),
+    )
+
+
+@bp.post("/settings/ym/mapping/refresh")
+def ym_mapping_refresh():
+    """Перечитывает каталог и остатки Маркета. Ничего на Маркет не отправляет."""
+    _check_csrf()
+    try:
+        ym_mapping.run(retries=0)  # из UI без ретраев: на 420 ждать минуту нельзя
+        db.set_state("ym_mapping_error", "")
+        msg = "refreshed"
+    except Exception as e:  # noqa: BLE001 — любая ошибка видна на странице, таблица не тронута
+        db.set_state("ym_mapping_error", str(e)[:500])
+        msg = "error"
+    return redirect(url_for("ui.ym_mapping_page", f=request.form.get("f", "matched"), msg=msg))

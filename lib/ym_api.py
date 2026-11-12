@@ -117,6 +117,21 @@ def warehouses(business_id, campaign_id=None, retries: int = MAX_RETRIES) -> lis
                   limit=30, json_body=body, retries=retries)
 
 
+def offer_mappings(business_id, retries: int = MAX_RETRIES) -> list[dict]:
+    """Весь каталог кабинета (общий на все магазины). Доступ: offers-and-cards-management."""
+    return _pages("POST", f"/v2/businesses/{int(business_id)}/offer-mappings",
+                  lambda r: (r.get("result") or {}).get("offerMappings", []),
+                  limit=200, json_body={}, retries=retries)
+
+
+def stocks(business_id, warehouse_id, retries: int = MAX_RETRIES) -> list[dict]:
+    """Остатки на складе (кабинет без групп складов). Доступ: offers-and-cards-management."""
+    return _pages("POST", f"/v3/businesses/{int(business_id)}/offers/stocks",
+                  lambda r: (r.get("result") or {}).get("offers", []),
+                  limit=100, json_body={"partnerWarehouseId": int(warehouse_id)},
+                  retries=retries)
+
+
 # --- Проверка подключения ----------------------------------------------------
 
 _HINTS = {

@@ -33,7 +33,8 @@
         <input class="form-control" type="password" id="api_key" name="api_key" autocomplete="off"
                placeholder="{{ 'сохранён: ' ~ key_masked ~ ' — оставьте пустым, чтобы не менять' if key_masked else 'вставьте ключ из кабинета продавца' }}">
         <div class="form-text">Кабинет Маркета → Настройки → API и модули → Токены авторизации.
-          Доступ: «Все методы» или «Обработка заказов и учёт товаров».</div>
+          Доступ: «Полное управление кабинетом» или вместе «Обработка заказов и учёт товаров»
+          + «Управление товарами и карточками» (без второго не будут работать маппинг и остатки).</div>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="business_id">businessId (кабинет)</label>

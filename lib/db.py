@@ -74,6 +74,19 @@ CREATE TABLE IF NOT EXISTS webhook_log (
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_created ON webhook_log(created_at);
 
+-- Связка Яндекс Маркет <-> Lutner (ym_mapping.py). Ключ связки — артикул:
+-- offer_id = catalog.article. Несопоставленные товары тоже здесь (lutner_uuid NULL),
+-- чтобы UI показал их. Таблица целиком перезаписывается при каждом обновлении.
+CREATE TABLE IF NOT EXISTS ym_mapping (
+    offer_id       TEXT PRIMARY KEY,
+    name           TEXT,
+    vendor         TEXT,
+    ym_status      TEXT,     -- статус товара в нашем магазине (campaign_id)
+    ym_stock       INTEGER,  -- остаток на складе Маркета сейчас (FIT), NULL = не передавался
+    lutner_uuid    TEXT,
+    lutner_article TEXT
+);
+
 CREATE TABLE IF NOT EXISTS system_state (
     key        TEXT PRIMARY KEY,
     value      TEXT,

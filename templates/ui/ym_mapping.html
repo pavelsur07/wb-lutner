@@ -1,0 +1,72 @@
+{% extends "ui/base.html" %}
+{% block title %}Маппинг Яндекс{% endblock %}
+{% block content %}
+{% include "ui/_settings_nav.html" %}
+<h1 class="h4">Маппинг Яндекс Маркет ↔ Lutner</h1>
+<p class="text-muted small mb-2">
+  Связка по артикулу: offerId в Маркете = артикул в каталоге Lutner.
+  Остаток считается как для WB и Ozon: склад Lutner <b>СПб</b> (store_spb);
+  меньше {{ min_stock }} → 0, больше {{ max_stock }} → {{ max_stock }}.
+  <b>На Маркет пока ничего не отправляется</b> — колонка «Будет на Маркете» показывает, что уйдёт.
+</p>
+
+{% if msg == 'refreshed' %}
+<div class="alert alert-success py-2" role="status">Маппинг обновлён.</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-danger py-2" role="alert">Последнее обновление не удалось, таблица не изменена:<br>
+  <span class="small">{{ error }}</span></div>
+{% endif %}
+
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+  <form method="post" action="{{ url_for('ui.ym_mapping_refresh') }}" class="m-0">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="f" value="{{ f }}">
+    <button class="btn btn-primary btn-sm">Обновить маппинг</button>
+  </form>
+  <span class="small text-muted">{{ 'обновлено ' ~ updated ~ ' МСК' if updated else 'ещё не обновлялся' }}</span>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-3 small">
+  <span class="badge text-bg-light border">товаров в кабинете: {{ counts.total }}</span>
+  <span class="badge text-bg-primary">сопоставлено: {{ counts.matched }}</span>
+  <span class="badge text-bg-secondary">→ 0 (меньше {{ min_stock }}): {{ counts.zero }}</span>
+  <span class="badge text-bg-info">потолок {{ max_stock }}: {{ counts.cap }}</span>
+  <span class="badge text-bg-success">как есть: {{ counts.as_is }}</span>
+</div>
+
+<ul class="nav nav-tabs mb-2">
+  {% for key, title in [('matched', 'Сопоставлены'), ('unmatched', 'Не сопоставлены'), ('all', 'Все')] %}
+  <li class="nav-item"><a class="nav-link {{ 'active' if f == key }}" href="{{ url_for('ui.ym_mapping_page', f=key) }}">{{ title }}</a></li>
+  {% endfor %}
+</ul>
+
+{% if not items %}
+<p class="text-muted">Пусто{{ '. Нажмите «Обновить маппинг».' if not counts.total }}</p>
+{% else %}
+<div class="table-responsive">
+<table class="table table-sm table-hover align-middle">
+  <thead><tr>
+    <th>offerId (Маркет)</th><th>Название</th><th>Бренд</th><th>Артикул Lutner</th>
+    <th class="text-end">СПб Lutner</th><th class="text-end">Будет на Маркете</th><th>Правило</th>
+    <th class="text-end">Сейчас на Маркете</th><th>Статус в магазине</th>
+  </tr></thead>
+  <tbody>
+  {% for r in items %}
+    <tr class="{{ 'text-muted' if not r.lutner_uuid }}">
+      <td><code>{{ r.offer_id }}</code></td>
+      <td class="small">{{ r.name or '' }}</td>
+      <td class="small">{{ r.vendor or '' }}</td>
+      <td>{{ r.lutner_article or '—' }}</td>
+      <td class="text-end">{{ r.store_spb if r.store_spb is not none else '—' }}</td>
+      <td class="text-end fw-bold">{{ r.to_ym if r.to_ym is not none else '—' }}</td>
+      <td class="small">{{ r.why }}</td>
+      <td class="text-end">{{ r.ym_stock if r.ym_stock is not none else '—' }}</td>
+      <td class="small">{{ r.ym_status or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
