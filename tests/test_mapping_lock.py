@@ -193,6 +193,40 @@ class OzonMappingTest(_DbCase):
 
     CATALOG_SIZE = OZON_PAGE + 20
 
+    def test_renamed_offer_replaces_stale_mapping(self):
+        conn = db.get_conn()
+        conn.executemany("INSERT INTO ozon_mapping VALUES (?,?,?,?,?)", [
+            ("OLD", 5001, 9001, "uuid-1", "OLD"),
+            ("UNRELATED", 9999, 9999, "uuid-x", "UNRELATED"),
+        ])
+        conn.commit()
+        conn.close()
+        with mock.patch.object(ozon_api, "iter_products", return_value=iter([_ozon_item(1)])):
+            self._run(ozon_mapping)
+        self.assertEqual(self._rows("SELECT offer_id FROM ozon_mapping ORDER BY offer_id"),
+                         [("ART-1",), ("UNRELATED",)])
+
+    def test_current_offers_with_same_product_id_are_preserved(self):
+        conn = db.get_conn()
+        conn.execute("INSERT INTO ozon_mapping VALUES ('OTHER',5001,9001,'uuid-x','OTHER')")
+        conn.commit()
+        conn.close()
+        items = [_ozon_item(1), _ozon_item(1, article="OTHER")]
+        with mock.patch.object(ozon_api, "iter_products", return_value=iter(items)):
+            self._run(ozon_mapping)
+        self.assertEqual(self._rows("SELECT offer_id FROM ozon_mapping ORDER BY offer_id"),
+                         [("ART-1",), ("OTHER",)])
+
+    def test_empty_or_unmatched_snapshot_preserves_mapping(self):
+        conn = db.get_conn()
+        conn.execute("INSERT INTO ozon_mapping VALUES ('OLD',5001,9001,'uuid-1','OLD')")
+        conn.commit()
+        conn.close()
+        for items in [[], [_ozon_item(1, article="UNKNOWN")]]:
+            with mock.patch.object(ozon_api, "iter_products", return_value=iter(items)):
+                self._run(ozon_mapping)
+            self.assertEqual(self._rows("SELECT offer_id FROM ozon_mapping"), [("OLD",)])
+
     def _fake_product_list(self, pages: list, on_call=None):
         calls = {"n": 0}
 
