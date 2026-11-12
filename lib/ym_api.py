@@ -132,6 +132,18 @@ def stocks(business_id, warehouse_id, retries: int = MAX_RETRIES) -> list[dict]:
                   retries=retries)
 
 
+STOCKS_BATCH = 2000  # лимит Маркета: skuItems за запрос; сам метод — 50 запросов/мин
+
+
+def update_stocks(business_id, items: list[dict], retries: int = MAX_RETRIES) -> dict:
+    """
+    items: [{'sku': offerId, 'partnerWarehouseId': int, 'count': int}, ...] — не более
+    STOCKS_BATCH, батчинг делает вызывающий код. Только для кабинета без групп складов.
+    """
+    return _request("POST", f"/v3/businesses/{int(business_id)}/offers/stocks/update",
+                    json_body={"skuItems": items}, retries=retries)
+
+
 # --- Проверка подключения ----------------------------------------------------
 
 _HINTS = {

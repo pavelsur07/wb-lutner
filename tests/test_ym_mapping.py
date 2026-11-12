@@ -99,6 +99,42 @@ class Run(unittest.TestCase):
         self.assertEqual(list(mapping()), ["KEEP"])
 
 
+class Push(unittest.TestCase):
+    def setUp(self):
+        seed()
+        with mock.patch.object(ym_api, "offer_mappings", return_value=OFFERS), \
+             mock.patch.object(ym_api, "stocks", return_value=[]):
+            ym_mapping.run()
+
+    def test_only_matched_with_rules(self):
+        import sync_stock_to_ym
+        with mock.patch.object(ym_api, "update_stocks", return_value={"status": "OK"}) as up:
+            self.assertEqual(sync_stock_to_ym.run(), 0)
+        biz, items = up.call_args.args
+        self.assertEqual(biz, "5")
+        got = {i["sku"]: i["count"] for i in items}
+        self.assertEqual(got, {"A": MAX, "B": 0, "C": MIN + 1, "D": 0})  # 3-22BK не шлём
+        self.assertTrue(all(i["partnerWarehouseId"] == 900 for i in items))
+        self.assertEqual(db.get_state("last_stock_to_ym"), "ok")
+
+    def test_dry_run_and_only(self):
+        import sync_stock_to_ym
+        with mock.patch.object(ym_api, "update_stocks") as up:
+            self.assertEqual(sync_stock_to_ym.run(dry_run=True), 0)
+            up.assert_not_called()
+            sync_stock_to_ym.run(only="C")
+        self.assertEqual(up.call_args.args[1], [{"sku": "C", "partnerWarehouseId": 900,
+                                                 "count": MIN + 1}])
+        self.assertIsNone(db.get_state("last_stock_to_ym"))  # тестовый --only не отметка цикла
+
+    def test_failure_alerts(self):
+        import sync_stock_to_ym
+        with mock.patch.object(ym_api, "update_stocks", side_effect=ym_api.YMError("403", 403)), \
+             mock.patch.object(sync_stock_to_ym, "alert") as al:
+            self.assertEqual(sync_stock_to_ym.run(), 1)
+        al.assert_called_once()
+
+
 class Page(unittest.TestCase):
     def setUp(self):
         seed()
