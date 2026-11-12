@@ -132,6 +132,17 @@ def stocks(business_id, warehouse_id, retries: int = MAX_RETRIES) -> list[dict]:
                   retries=retries)
 
 
+def orders(business_id, campaign_id, retries: int = MAX_RETRIES) -> list[dict]:
+    """
+    Заказы НАШЕГО магазина в статусе PROCESSING (кабинет общий на несколько магазинов).
+    Ответ: {orders: [...], paging} на верхнем уровне. Окно по умолчанию — 30 дней создания.
+    """
+    return _pages("POST", f"/v1/businesses/{int(business_id)}/orders",
+                  lambda r: r.get("orders", []), limit=50,
+                  json_body={"campaignIds": [int(campaign_id)], "statuses": ["PROCESSING"]},
+                  retries=retries)
+
+
 STOCKS_BATCH = 2000  # лимит Маркета: skuItems за запрос; сам метод — 50 запросов/мин
 
 

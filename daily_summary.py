@@ -1,5 +1,5 @@
 """
-daily_summary.py — вечерний отчёт на ALERT_TO: сводка по WB и Ozon за сутки.
+daily_summary.py — вечерний отчёт на ALERT_TO: сводка по WB, Ozon и Яндекс Маркету за сутки.
 
 Cron: 0 20 * * * flock -n /tmp/summary.lock -c 'cd /opt/wb-lutner && venv/bin/python daily_summary.py'
 """
@@ -50,6 +50,7 @@ def _health(conn) -> list[str]:
         ("last_catalog_sync", "Синхронизация каталога"),
         ("last_stock_to_wb", "Остатки -> WB"),
         ("last_stock_to_ozon", "Остатки -> Ozon"),
+        ("last_stock_to_ym", "Остатки -> Яндекс Маркет"),
     ):
         row = conn.execute(
             "SELECT value, updated_at FROM system_state WHERE key=?", (key,)
@@ -62,9 +63,11 @@ def _health(conn) -> list[str]:
     cat = conn.execute("SELECT COUNT(*) c FROM catalog").fetchone()["c"]
     wb_map = conn.execute("SELECT COUNT(*) c FROM mapping").fetchone()["c"]
     oz_map = conn.execute("SELECT COUNT(*) c FROM ozon_mapping").fetchone()["c"]
+    ym_map = conn.execute(
+        "SELECT COUNT(*) c FROM ym_mapping WHERE lutner_uuid IS NOT NULL").fetchone()["c"]
     lines += [
         f"  Каталог Lutner: {cat} товаров",
-        f"  Связок WB: {wb_map} | Ozon: {oz_map}",
+        f"  Связок WB: {wb_map} | Ozon: {oz_map} | Яндекс Маркет: {ym_map}",
         "",
     ]
     return lines
@@ -77,18 +80,21 @@ def run() -> int:
             conn, "orders", "wb_order_id", "Wildberries")
         oz_lines, oz_total, oz_prob = _section(
             conn, "ozon_orders", "posting_number", "Ozon")
+        ym_lines, ym_total, ym_prob = _section(
+            conn, "ym_orders", "ym_order_id", "Яндекс Маркет")
         health = _health(conn)
     finally:
         conn.close()
 
-    body = "\n".join(wb_lines + oz_lines + health)
-    subject = (f"[wb-lutner] Отчёт: WB {wb_total}, Ozon {oz_total}"
-               + (f", проблем {wb_prob + oz_prob}" if wb_prob + oz_prob else ""))
+    body = "\n".join(wb_lines + oz_lines + ym_lines + health)
+    problems = wb_prob + oz_prob + ym_prob
+    subject = (f"[wb-lutner] Отчёт: WB {wb_total}, Ozon {oz_total}, ЯМ {ym_total}"
+               + (f", проблем {problems}" if problems else ""))
 
     to = config.ALERT_TO or config.SMTP_USER or ""
     send_email(to, subject, body)
-    log.info("daily summary sent: wb=%s ozon=%s problems=%s",
-             wb_total, oz_total, wb_prob + oz_prob)
+    log.info("daily summary sent: wb=%s ozon=%s ym=%s problems=%s",
+             wb_total, oz_total, ym_total, problems)
     return 0
 
 

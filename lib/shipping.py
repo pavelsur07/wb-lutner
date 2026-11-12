@@ -1,5 +1,5 @@
 """
-lib/shipping.py — правило даты отгрузки, общее для WB и Ozon.
+lib/shipping.py — правило даты отгрузки, общее для WB, Ozon и Яндекс Маркета.
 
 - Заказ до 07:00 МСК включительно -> отгрузка в тот же день,
   после 07:00 -> на следующий день.
@@ -19,7 +19,7 @@ from lib import db
 
 MSK = timezone(timedelta(hours=3))
 CUTOFF = (7, 0)
-MARKETS = ("wb", "ozon")
+MARKETS = ("wb", "ozon", "ym")
 SAT, SUN = 5, 6
 
 

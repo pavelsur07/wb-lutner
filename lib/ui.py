@@ -200,7 +200,7 @@ def _orders_page(market: str):
 
 # --- График отгрузок -----------------------------------------------------
 
-_MARKET_TITLES = {"wb": "Wildberries", "ozon": "Ozon"}
+_MARKET_TITLES = {"wb": "Wildberries", "ozon": "Ozon", "ym": "Яндекс Маркет"}
 _WD = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 
