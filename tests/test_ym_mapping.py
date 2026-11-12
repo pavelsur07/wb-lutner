@@ -134,6 +134,23 @@ class Page(unittest.TestCase):
         self.assertIn("нет доступа", html)
         self.assertIn("A", mapping())                    # таблица не тронута
 
+    def test_ym_orders_page(self):
+        r = self.c.get("/ui/ym", headers=self.auth)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Заказов пока нет", r.get_data(as_text=True))
+
+        conn = db.get_conn()
+        conn.execute("INSERT INTO ym_orders(ym_order_id, lutner_order_id, status, items_json) "
+                     "VALUES (123456789, 'L-1', 'created', '[]')")
+        conn.commit()
+        conn.close()
+        html = self.c.get("/ui/ym", headers=self.auth).get_data(as_text=True)
+        self.assertIn("123456789", html)
+        self.assertIn("L-1", html)
+        # активна вкладка «Яндекс Маркет», а не «Настройка»
+        self.assertIn('nav-link active" href="/ui/ym"', html)
+        self.assertNotIn('nav-link active" href="/ui/settings/shipping"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

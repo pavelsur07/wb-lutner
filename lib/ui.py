@@ -1,5 +1,5 @@
 """
-lib/ui.py — минимальный UI: списки заказов WB и отправлений Ozon (только
+lib/ui.py — минимальный UI: списки заказов WB, Яндекс Маркета и отправлений Ozon (только
 просмотр) и вкладка «Настройка»: график отгрузок (/ui/settings/shipping)
 подключение Яндекс Маркета (/ui/settings/ym) и маппинг Маркет ↔ Lutner
 (/ui/settings/ym/mapping).
@@ -33,6 +33,7 @@ MSK = timezone(timedelta(hours=3))
 _TABLES = {
     "wb": ("orders", "wb_order_id", "Wildberries", "ui.wb_orders", "last_cycle_wb"),
     "ozon": ("ozon_orders", "posting_number", "Ozon", "ui.ozon_orders", "last_cycle_ozon"),
+    "ym": ("ym_orders", "ym_order_id", "Яндекс Маркет", "ui.ym_orders", "last_cycle_ym"),
 }
 
 STATUS_CLASS = {
@@ -123,6 +124,11 @@ def ozon_orders():
     return _orders_page("ozon")
 
 
+@bp.get("/ym")
+def ym_orders():
+    return _orders_page("ym")
+
+
 def _orders_page(market: str):
     table, id_col, title, endpoint, state_key = _TABLES[market]
     page = max(request.args.get("page", 1, type=int), 1)
@@ -177,7 +183,7 @@ def _orders_page(market: str):
     pages = max(1, -(-total // PER_PAGE))  # ceil
     return render_template(
         "ui/orders.html",
-        active=market,
+        active="ym_orders" if market == "ym" else market,  # "ym" занят настройками Маркета
         endpoint=endpoint,
         marketplace=title,
         orders=orders,

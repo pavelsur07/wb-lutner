@@ -18,6 +18,9 @@
         <a class="nav-link {{ 'active' if active == 'ozon' }}" href="{{ url_for('ui.ozon_orders') }}">Ozon</a>
       </li>
       <li class="nav-item">
+        <a class="nav-link {{ 'active' if active == 'ym_orders' }}" href="{{ url_for('ui.ym_orders') }}">Яндекс Маркет</a>
+      </li>
+      <li class="nav-item">
         <a class="nav-link {{ 'active' if active in ('shipping', 'ym', 'ym_mapping') }}" href="{{ url_for('ui.shipping_settings') }}">Настройка</a>
       </li>
     </ul>

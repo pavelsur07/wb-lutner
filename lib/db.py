@@ -87,6 +87,21 @@ CREATE TABLE IF NOT EXISTS ym_mapping (
     lutner_article TEXT
 );
 
+-- Обработанные заказы Яндекс Маркета (ym_main.py, этап 3). Как ozon_orders + status_at.
+CREATE TABLE IF NOT EXISTS ym_orders (
+    ym_order_id        INTEGER PRIMARY KEY,
+    lutner_order_id    TEXT,
+    status             TEXT NOT NULL,
+    comment            TEXT,
+    items_json         TEXT,
+    error_json         TEXT,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    status_at          TEXT,
+    sent_to_manager_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ym_orders_status  ON ym_orders(status);
+CREATE INDEX IF NOT EXISTS idx_ym_orders_created ON ym_orders(created_at);
+
 CREATE TABLE IF NOT EXISTS system_state (
     key        TEXT PRIMARY KEY,
     value      TEXT,
