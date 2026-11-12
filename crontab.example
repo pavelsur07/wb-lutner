@@ -22,6 +22,9 @@ PATH=/usr/bin:/bin
 */15 * * * * flock -n /tmp/mapping.lock -c "cd /opt/wb-lutner && venv/bin/python initial_mapping.py >> logs/cron_mapping.log 2>&1"
 */15 * * * * flock -n /tmp/ozon-mapping.lock -c "cd /opt/wb-lutner && venv/bin/python ozon_mapping.py >> logs/cron_ozon_mapping.log 2>&1"
 
+# Яндекс Маркет: маппинг offerId <-> артикул Lutner (только чтение Маркета)
+*/15 * * * * flock -n /tmp/ym-mapping.lock -c "cd /opt/wb-lutner && venv/bin/python ym_mapping.py >> logs/cron_ym_mapping.log 2>&1"
+
 # Живость webhook (алерт если тишина >15 мин)
 */10 * * * * flock -n /tmp/heartbeat.lock -c "cd /opt/wb-lutner && venv/bin/python check_heartbeat.py >> logs/cron_heartbeat.log 2>&1"
 
