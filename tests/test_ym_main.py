@@ -69,10 +69,10 @@ class Run(unittest.TestCase):
                                         return_value={"order_id": 555}).start()
         self.addCleanup(mock.patch.stopall)
 
-    def go(self, orders, dry_run=False):
+    def go(self, orders, dry_run=False, fake=False):
         with mock.patch.object(ym_api, "orders", return_value=orders) as o:
-            rc = ym_main.run(dry_run)
-        o.assert_called_once_with("5", CAMP)
+            rc = ym_main.run(dry_run, fake)
+        o.assert_called_once_with("5", CAMP, fake=fake)
         return rc
 
     def test_creates_lutner_order(self):
@@ -111,6 +111,18 @@ class Run(unittest.TestCase):
         self.assertEqual(json.loads(rows[6]["error_json"])[0]["reason"], "no_mapping")
         self.assertEqual(json.loads(rows[7]["error_json"])[0]["reason"], "no_stock_spb")
         self.assertEqual(self.alert.call_count, 2)
+
+    def test_fake_mode_processes_test_order_marked(self):
+        self.go([order(13, fake=True)], fake=True)
+        comment = self.create.call_args.args[0]["comment"]
+        self.assertTrue(comment.startswith("ТЕСТ, не отгружать! Яндекс Маркет, отгрузка "))
+        self.assertEqual(saved()[13]["status"], "created")
+        self.assertIsNone(db.get_state("last_cycle_ym"))  # тест не отметка рабочего цикла
+
+    def test_fake_mode_dry_run(self):
+        self.go([order(14, fake=True)], dry_run=True, fake=True)
+        self.create.assert_not_called()
+        self.assertEqual(saved(), {})
 
     def test_lutner_rejects(self):
         self.create.return_value = {"errors": ["bad"]}

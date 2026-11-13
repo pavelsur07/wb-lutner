@@ -6,7 +6,8 @@ ym_main.py — забирает новые заказы FBS нашего маг�
   - кабинет общий на несколько магазинов -> запрос фильтруется по campaign_id
     из настроек (UI: Настройка → Яндекс Маркет)
   - в заказе может быть НЕСКОЛЬКО позиций -> один заказ Lutner со всеми товарами
-  - тестовые заказы Маркета (fake) заказом в Lutner НЕ становятся
+  - тестовые заказы Маркета (fake) заказом в Lutner НЕ становятся; Маркет их и не
+    отдаёт без fake=true. Проверка цепочки: --fake [--dry-run] (комментарий «ТЕСТ»)
   - offerId -> артикул Lutner через ym_mapping
 
 Берём status=PROCESSING с substatus STARTED (ждёт сборки) или READY_TO_SHIP
@@ -111,6 +112,8 @@ def process_order(order: dict, dry_run: bool) -> str:
             return "failed"
 
         comment = f"Яндекс Маркет, отгрузка {_shipment_date(order)}, Заказ {oid}"
+        if order.get("fake"):
+            comment = "ТЕСТ, не отгружать! " + comment
 
         if dry_run:
             # dry-run НЕ пишет в ym_orders — иначе реальный прогон заказ пропустит
@@ -160,14 +163,14 @@ def _age_hours(order: dict) -> float | None:
     return (datetime.now(timezone.utc) - dt).total_seconds() / 3600
 
 
-def run(dry_run: bool) -> int:
+def run(dry_run: bool, fake: bool = False) -> int:
     s = ym_api.settings()
     if not (s["business_id"] and s["campaign_id"]):
         log.error("не заданы businessId / campaignId (UI: Настройка → Яндекс Маркет)")
         return 1
 
     try:
-        orders = ym_api.orders(s["business_id"], s["campaign_id"])
+        orders = ym_api.orders(s["business_id"], s["campaign_id"], fake=fake)
     except Exception as e:  # noqa: BLE001
         log.exception("ym orders fetch failed")
         alert("ym_main: не удалось получить заказы", str(e))
@@ -187,7 +190,7 @@ def run(dry_run: bool) -> int:
         oid = o.get("orderId")
         if not oid or oid in known:
             continue
-        if o.get("fake"):
+        if o.get("fake") and not fake:
             skipped.append((o, "fake (тестовый заказ Маркета)"))
         elif (o.get("substatus") or "") not in PROCESSABLE_SUBSTATUSES:
             skipped.append((o, f"status={o.get('status')}/{o.get('substatus')}"))
@@ -220,7 +223,7 @@ def run(dry_run: bool) -> int:
         r = process_order(o, dry_run)
         stats[r] = stats.get(r, 0) + 1
     log.info("cycle done: fetched=%s %s", len(orders), stats)
-    if not dry_run:
+    if not dry_run and not fake:
         db.set_state("last_cycle_ym", datetime.now(timezone.utc).isoformat())
     return 0
 
@@ -229,5 +232,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true",
                     help="не создавать заказы в Lutner и ничего не писать в ym_orders")
+    ap.add_argument("--fake", action="store_true",
+                    help="проверка цепочки: обработать ТЕСТОВЫЕ заказы Маркета (из кабинета). "
+                         "Без --dry-run создаст настоящий заказ в Lutner с пометкой «ТЕСТ»")
     args = ap.parse_args()
-    sys.exit(run(args.dry_run))
+    sys.exit(run(args.dry_run, args.fake))

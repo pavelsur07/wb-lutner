@@ -132,14 +132,17 @@ def stocks(business_id, warehouse_id, retries: int = MAX_RETRIES) -> list[dict]:
                   retries=retries)
 
 
-def orders(business_id, campaign_id, retries: int = MAX_RETRIES) -> list[dict]:
+def orders(business_id, campaign_id, fake: bool = False,
+           retries: int = MAX_RETRIES) -> list[dict]:
     """
     Заказы НАШЕГО магазина в статусе PROCESSING (кабинет общий на несколько магазинов).
     Ответ: {orders: [...], paging} на верхнем уровне. Окно по умолчанию — 30 дней создания.
+    Тестовые заказы Маркет отдаёт ТОЛЬКО при fake=True (и тогда только их).
     """
     return _pages("POST", f"/v1/businesses/{int(business_id)}/orders",
                   lambda r: r.get("orders", []), limit=50,
-                  json_body={"campaignIds": [int(campaign_id)], "statuses": ["PROCESSING"]},
+                  json_body={"campaignIds": [int(campaign_id)], "statuses": ["PROCESSING"],
+                             **({"fake": True} if fake else {})},
                   retries=retries)
 
 
