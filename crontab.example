@@ -13,6 +13,7 @@ PATH=/usr/bin:/bin
 
 # Основной цикл: заказы Ozon -> Lutner
 */5 * * * *  flock -n /tmp/ozon-main.lock -c "cd /opt/wb-lutner && venv/bin/python ozon_main.py >> logs/cron_ozon_main.log 2>&1"
+*/5 * * * * flock -n /tmp/ym-main.lock -c "cd /opt/wb-lutner && venv/bin/python ym_main.py >> logs/cron_ym_main.log 2>&1"
 
 # Остатки SPB -> WB / Ozon / Яндекс Маркет
 */10 * * * * flock -n /tmp/stock-sync.lock -c "cd /opt/wb-lutner && venv/bin/python sync_stock_to_wb.py >> logs/cron_stock.log 2>&1"
